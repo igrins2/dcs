@@ -12,8 +12,8 @@ MACIE_UART = 3
 #MACIE_STATUS = {0:MACIE_OK, 1:MACIE_FAIL}
 #MACIE_Connection = {0:MACIE_NONE, 1: MACIE_USB, 2:MACIE_GigE, 3:MACIE_UART}
 
-#class MACIE_IpAddr(Structure):
-#    _fields_ = [("ipAddr", c_ubyte*4)]
+class MACIE_IpAddr(Structure):
+    _fields_ = [("ipAddr", c_ubyte*4)]
 
 class MACIE_CardInfo(Structure):
     _fields_ = [("macieSerialNumber", c_ushort),
@@ -47,7 +47,7 @@ class MACIE_FitsHdr(Structure):
                 ("comment", c_char*72)]
 '''
 
-lib = CDLL("/home/dcsh/macie_v5.2_centos/MacieApp/libMACIE.so")
+lib = CDLL("/home/dcs/macie_v5.2_centos/MacieApp/libMACIE.so")
  
 #input, output parameters  
 lib.MACIE_LibVersion.restype = c_float  
@@ -57,6 +57,9 @@ lib.MACIE_Init.restype = c_int
 
 lib.MACIE_SetGigeTimeout.argtypes = [c_ushort]
 lib.MACIE_SetGigeTimeout.restype = c_int
+
+lib.MACIE_CheckInterfaces.argtypes = [c_ushort, POINTER(MACIE_IpAddr), c_ushort, POINTER(c_ushort), POINTER(POINTER(MACIE_CardInfo))]
+lib.MACIE_CheckInterfaces.restype = c_int
 
 lib.MACIE_GetHandle.argtypes = [c_ushort, c_int]
 lib.MACIE_GetHandle.restype = c_ulong
