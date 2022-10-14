@@ -60,7 +60,7 @@ def main():
                     print("Error reading the file, retrying in 10s.")
                     sleep_time = 10
                 else:
-                    json.dump(r, open("/home/dcs/macie/HK_db.json", "w"))
+                    json.dump(r, open("/DCS/HK_db.json", "w"))
                     cur_t = time.strftime("%Y/%m/%d %H:%M:%S", time.localtime())
                     print("Downloaded", r["date"], r["time"], "(", cur_t, ")")
 

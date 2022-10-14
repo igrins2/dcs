@@ -52,6 +52,9 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.set_param_ui(1, 1, 1, 0, 1)
         self.e_exp_time.setText("1.63")
 
+        self.radio_exp_time.setChecked(True)
+        self.radio_fowler_number.setChecked(False)
+
         self.init_events()
 
         self.chk_autosave.setText("Save AS")
@@ -317,6 +320,9 @@ class MainWindow(Ui_MainWindow, QMainWindow):
 
     def initialize1(self, ics=False):
         self.dc.Initialize(int(self.e_timeout.text()), ics)
+        info = "%s (%d)" % (self.dc.LibVersion(), self.dc.macieSN)
+        self.label_ver.setText(info)
+        self.btn_initialize1.setEnabled(False)
 
 
     def initialize2(self):
@@ -377,20 +383,20 @@ class MainWindow(Ui_MainWindow, QMainWindow):
 
     def judge_param(self):
         # calculation fowler number & exp time
-        _exp_time = float(self.e_exp_time.text())
+        self.dc.expTime = float(self.e_exp_time.text())
         _fowler_num = int(self.e_fowler_number.text())
 
         _fowler_time = float(self.e_drops.text())
 
         if self.radio_exp_time.isChecked():
-            _max_fowler_number = int((_exp_time - T_minFowler) / T_frame)
+            _max_fowler_number = int((self.dc.expTime - T_minFowler) / T_frame)
             if _fowler_num > _max_fowler_number:
                 #dialog box
                 print("please change 'exposure time'!")
                 return False
 
         elif self.radio_fowler_number.isChecked():
-            _fowler_time = _exp_time - T_frame * _fowler_num
+            _fowler_time = self.dc.expTime - T_frame * _fowler_num
             if _fowler_time < T_minFowler:
                 #dialog box
                 print("please change 'fowler sampling number'!")
@@ -413,38 +419,38 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.dc.groups = int(self.e_groups.text())
         self.dc.ramps = int(self.e_ramps.text())
 
-        _exp_time, self.cal_waittime = 0.0, 0.0
+        self.cal_waittime = 0.0, 0.0
 
         if self.dc.samplingMode == UTR_MODE:
             self.dc.drops = int(self.e_drops.text())
 
-            _exp_time = (T_frame * self.dc.reads * self.dc.groups) + (T_frame * self.dc.drops * (self.dc.groups -1 ))
-            self.cal_waittime = T_br + ((T_frame * self.dc.resets) + _exp_time) * self.dc.ramps
+            self.dc.expTime = (T_frame * self.dc.reads * self.dc.groups) + (T_frame * self.dc.drops * (self.dc.groups -1 ))
+            self.cal_waittime = T_br + ((T_frame * self.dc.resets) + self.dc.expTime) * self.dc.ramps
             
             self.dc.SetRampParam(self.dc.resets, self.dc.reads, self.dc.groups, self.dc.drops, self.dc.ramps, ics)   
 
-            str_exp_time = "%.3f" % _exp_time
+            str_exp_time = "%.3f" % self.dc.expTime
             self.e_exp_time.setText(str_exp_time)     
 
         else:
             #self.dc.fowlerTime = float(self.e_drops.text())
             #exptime = self.dc.fowlerTime + T_frame * self.dc.reads
 
-            _exp_time = float(self.e_exp_time.text())
+            self.dc.expTime = float(self.e_exp_time.text())
             if self.dc.samplingMode == FOWLER_MODE:
-                if self.radio_fowler_number.isChecked():
-                    self.e_reads.setText(self.e_fowler_number.text())
-                    self.dc.reads = int(self.e_reads.text())
+                #if self.radio_fowler_number.isChecked():
+                self.e_reads.setText(self.e_fowler_number.text())
+                self.dc.reads = int(self.e_reads.text())
 
-                self.dc.fowlerTime = _exp_time - T_frame * self.dc.reads
-
+                self.dc.fowlerTime = self.dc.expTime - T_frame * self.dc.reads
                 str_fowlerTime = "%.3f" % self.dc.fowlerTime
+                
                 self.e_drops.setText(str_fowlerTime)
             
             else:
-                _exp_time = self.dc.fowlerTime + T_frame * self.dc.reads
+                self.dc.expTime = self.dc.fowlerTime + T_frame * self.dc.reads
 
-                str_exp_time = "%.3f" % _exp_time
+                str_exp_time = "%.3f" % self.dc.expTime
                 self.e_exp_time.setText(str_exp_time)
 
             self.e_reads.setText(self.e_fowler_number.text())

@@ -36,11 +36,16 @@ import threading
 #lib2.fowler_calculation.restype = POINTER(c_float)
 
 #for c++
-lib2 = cdll.LoadLibrary("/home/dcss/workspace/dcs-master/FowlerCalculation/libsampling_cal.so")
+lib2 = cdll.LoadLibrary("/home/dcsh/workspace/dcs/FowlerCalculation/libsampling_cal.so")
 fowler_calculation = lib2.fowler_calculation
 fowler_calculation.argtypes = (c_int, c_int, c_int, POINTER(c_ushort))
 fowler_calculation.restype = POINTER(c_float)
 
+class MACIE_IpAddr(Structure):
+    _fields_ = [("ipAddr", c_ubyte*4)]
+
+lib.MACIE_CheckInterfaces.argtypes = [c_ushort, POINTER(MACIE_IpAddr), c_ushort, POINTER(c_ushort), POINTER(POINTER(MACIE_CardInfo))]
+lib.MACIE_CheckInterfaces.restype = c_int
 
 class MACIE_FitsHdr(Structure):
         _fields_ = [("key", c_char*9),
@@ -93,6 +98,8 @@ class DC(threading.Thread):
         self.slot1 = False  # slot 1-True, slot 2-False
         Cards = MACIE_CardInfo * 2
         self.pCard = Cards()
+        self.macieSN = 0
+        self.init = False
 
         self.slctASICs = 0
         self.option = True
@@ -206,15 +213,17 @@ class DC(threading.Thread):
         connection = MACIE_NONE
         try:
 
-            ipaddr = MACIE_IpAddr()
+            ipaddr_array = MACIE_IpAddr
+            pIPs = ipaddr_array()
+            pIPs = MACIE_IpAddr(ipAddr = (192, 168, 1, 102))
+
             arr_list = []
             arr = np.array(arr_list)
             #print(arr)
             card = arr.ctypes.data_as(POINTER(c_ushort))
-            print(card[0])
             self.pCard = pointer(pointer(MACIE_CardInfo()))
 
-            sts = lib.MACIE_CheckInterfaces(0, ipaddr, 0, card, self.pCard)
+            sts = lib.MACIE_CheckInterfaces(0, pIPs, 0, card, self.pCard)
             #print(sts)
             res = ""
             if sts == MACIE_OK:
@@ -223,18 +232,18 @@ class DC(threading.Thread):
                 res = RET_FAIL
             self.logwrite(BOTH, "MACIE_CheckInterfaces: " + res)
 
-            if self.pCard == None:
+            if self.pCard == None or res == RET_FAIL:
                 self.logwrite(BOTH, RET_FAIL)
-
-            #self.ip_addr = "192.168.1.102"  #for tes
-            #for i in range(card.contents.value):
+                return
 
             #self.slctCard = 0
 
-            self.logwrite(BOTH, str(self.pCard[self.slctCard].contents.macieSerialNumber))
+            self.macieSN = self.pCard[self.slctCard].contents.macieSerialNumber
+            self.logwrite(BOTH, str(self.macieSN))
             self.logwrite(BOTH, "True" if self.pCard[self.slctCard].contents.bUART == True else "False")
             self.logwrite(BOTH, "True" if self.pCard[self.slctCard].contents.bGigE == True else "False")
             self.logwrite(BOTH, "True" if self.pCard[self.slctCard].contents.bUSB == True else "False")
+            #print(self.pCard[self.slctCard].contents.ipAddr[0], self.pCard[self.slctCard].contents.ipAddr[1], self.pCard[self.slctCard].contents.ipAddr[2], self.pCard[self.slctCard].contents.ipAddr[3])
             ipaddr = "%d.%d.%d.%d" % (self.pCard[self.slctCard].contents.ipAddr[0], self.pCard[self.slctCard].contents.ipAddr[1], self.pCard[self.slctCard].contents.ipAddr[2], self.pCard[self.slctCard].contents.ipAddr[3])
             self.logwrite(BOTH, ipaddr)
             self.logwrite(BOTH, str(self.pCard[self.slctCard].contents.gigeSpeed))
@@ -264,37 +273,6 @@ class DC(threading.Thread):
         self.logwrite(BOTH, msg)
 
 
-    def GetAvailableMACIEs(self):
-        if self.handle == 0:
-            return False
-
-        avaiMACIEs = lib.MACIE_GetAvailableMACIEs(self.handle)
-        msg = "MACIE_GetAvailableMACIEs = %d" % avaiMACIEs
-        self.logwrite(BOTH, msg)
-
-        self.slctMACIEs = avaiMACIEs & 1
-        
-        arr_list = []
-        arr = np.array(arr_list)
-        val = arr.ctypes.data_as(POINTER(c_uint))
-        msg = ""
-
-        if self.slctMACIEs == 0:
-            msg = "Select MACIE = %d invalid" % avaiMACIEs
-            self.logwrite(BOTH, msg)
-            return False
-        elif lib.MACIE_ReadMACIEReg(self.handle, avaiMACIEs, MACIE_Reg, val) != MACIE_OK:
-                #msg = "MACIE read %d failed: %s" % (MACIE_Reg, self.GetErrMsg())
-                self.logwrite(BOTH, self.GetErrMsg())
-                return False
-        else:
-            msg = "MACIE h%04x = %04x" % (MACIE_Reg, val[0])
-            self.logwrite(BOTH, msg)
-        
-        return True
-        
-
-
     def Initialize(self, timeout, ics):
 
         # self.InitBuffer()
@@ -318,14 +296,12 @@ class DC(threading.Thread):
         # 4. GetHandle
         self.GetHandle()
 
-        # 5. GetAvailableMACIEs
-        if self.GetAvailableMACIEs() == False:
-            return -4
-
         self.logwrite(BOTH, "Initialize " + RET_OK)
 
         if ics == True:
             self.send_message(CMD_INITIALIZE1 + " OK")
+
+        self.init = True
 
         return 1
 
@@ -338,6 +314,10 @@ class DC(threading.Thread):
         msg = "Initialize with handle: %ld" % self.handle
         self.logwrite(BOTH, msg)
 
+        # step 1. GetAvailableMACIEs
+        if self.GetAvailableMACIEs() == False:
+            return False
+
         if self.slctMACIEs == 0:
             self.logwrite(BOTH, "MACIE0 is not available")
             return False
@@ -346,7 +326,7 @@ class DC(threading.Thread):
         arr = np.array(arr_list)
         val = arr.ctypes.data_as(POINTER(c_uint))
 
-        # step 1. load MACIE firmware from slot1 or slot2
+        # step 2. load MACIE firmware from slot1 or slot2
         if lib.MACIE_loadMACIEFirmware(self.handle, self.slctMACIEs, self.slot1, val) != MACIE_OK:
             #msg = "LOAD MACIE firmware " + RET_FAIL + ": " + self.GetErrMsg()
             self.logwrite(BOTH, self.GetErrMsg())
@@ -357,7 +337,7 @@ class DC(threading.Thread):
             return False
         self.logwrite(BOTH, "Load MACIE firmware " + RET_OK)
 
-        # step 2. download MACIE registers
+        # step 3. download MACIE registers
         file = self.loadfile_path + "/" + self.macie_file
         if lib.MACIE_DownloadMACIEFile(self.handle, self.slctMACIEs, file.encode()) != MACIE_OK:
             #msg = RET_FAIL + ": " + self.GetErrMsg()
@@ -421,12 +401,56 @@ class DC(threading.Thread):
             return False
         self.logwrite(BOTH, "Download ASIC firmware " + RET_OK)
 
-        # step 2. checking!!!
+        # step 2. GetAvailableASICs
+        if self.GetAvailableASICs() == False:
+            return False
+
+        self.logwrite(BOTH, "DownloadMCD " + RET_OK)
+
+        if ics == True:
+            self.send_message(CMD_DOWNLOAD + " OK")
+
+        return True
+
+
+    def GetAvailableMACIEs(self):
+        if self.handle == 0:
+            return False
+
+        avaiMACIEs = lib.MACIE_GetAvailableMACIEs(self.handle)
+        msg = "MACIE_GetAvailableMACIEs = %d" % avaiMACIEs
+        self.logwrite(BOTH, msg)
+
+        self.slctMACIEs = avaiMACIEs & 1
+        
+        arr_list = []
+        arr = np.array(arr_list)
+        val = arr.ctypes.data_as(POINTER(c_uint))
+        msg = ""
+
+        if self.slctMACIEs == 0:
+            msg = "Select MACIE = %d invalid" % avaiMACIEs
+            self.logwrite(BOTH, msg)
+            return False
+        elif lib.MACIE_ReadMACIEReg(self.handle, avaiMACIEs, MACIE_Reg, val) != MACIE_OK:
+                #msg = "MACIE read %d failed: %s" % (MACIE_Reg, self.GetErrMsg())
+                self.logwrite(BOTH, self.GetErrMsg())
+                return False
+        else:
+            msg = "MACIE h%04x = %04x" % (MACIE_Reg, val[0])
+            self.logwrite(BOTH, msg)
+        
+        return True
+
+
+    def GetAvailableASICs(self):
+        if self.handle == 0:
+            return False
+        
         self.slctASICs = lib.MACIE_GetAvailableASICs(self.handle, False)
         if self.slctASICs == 0:
             self.logwrite(BOTH, "MACIE_GetAvailableASICs " + RET_FAIL)
             return False
-
         else:           
             val, sts = self.read_ASIC_reg(ASICAddr)
             msg = "ASIC h%04x = %04x" % (ASICAddr, val[0])
@@ -442,11 +466,6 @@ class DC(threading.Thread):
                 self.logwrite(BOTH, msg)
         msg = "Available ASICs = %d" % self.slctASICs
         self.logwrite(BOTH, msg)
-
-        self.logwrite(BOTH, "DownloadMCD " + RET_OK)
-
-        if ics == True:
-            self.send_message(CMD_DOWNLOAD + " OK")
 
         return True
 
@@ -710,14 +729,19 @@ class DC(threading.Thread):
         print("triggerTimeout 1:", triggerTimeout)
 
         ti.sleep(1.5)
-
+        
         getByte = 0
         if self.samplingMode == UTR_MODE:
             getByte = FRAME_X * FRAME_Y * 2 * self.reads * self.groups * self.ramps
-            triggerTimeout *= self.reads * self.groups * self.ramps
+            #triggerTimeout = triggerTimeout + (T_frame * self.reads * self.groups * self.ramps * self.drops) * 1000
+            triggerTimeout = triggerTimeout + ((T_frame * self.resets) + self.expTime) * self.ramps * 1000
+
+            print("triggerTimeout 2:", triggerTimeout)
+
         else:
             getByte = FRAME_X * FRAME_Y * 2 * 2 * self.reads * self.ramps
-            triggerTimeout =  triggerTimeout + (2 * self.reads * self.ramps * T_frame + self.fowlerTime) * 1000
+            #triggerTimeout =  triggerTimeout + (2 * self.reads * self.ramps * T_frame + self.fowlerTime) * 1000
+            triggerTimeout = triggerTimeout + ((T_frame * self.dc.resets) + self.dc.fowlerTime + (2 * T_frame * self.dc.reads)) * self.dc.ramps * 1000
             
             print("triggerTimeout 2:", self.fowlerTime, triggerTimeout)
 
@@ -1010,6 +1034,7 @@ class DC(threading.Thread):
         pHeaders[header_cnt] = MACIE_FitsHdr(key="MACIESET".encode(), valType=HDR_STR, sVal=self.macie_file.encode(), comment="MACIE register file".encode())
         header_cnt += 1
 
+        '''
         #-------------------------------------------------------------------------------------
         #temperature
         with open(self.exe_path+"/HK_db.json", 'r') as f:
@@ -1062,7 +1087,7 @@ class DC(threading.Thread):
         header_cnt += 1
 
         #-------------------------------------------------------------------------------------
-
+        '''
         pHeaders[header_cnt] = MACIE_FitsHdr(key="SEQNUM_R".encode(), valType=HDR_INT, iVal=ramp, comment="Ramp number".encode())
         header_cnt += 1
 
