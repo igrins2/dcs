@@ -50,7 +50,6 @@ class MACIE_FitsHdr(Structure):
 '''
 
 lib = CDLL("/home/dcsh/macie_v5.2_centos/MacieApp/libMACIE.so")
-lib = CDLL("/home/dcs/macie_v5.2_centos/MacieApp/libMACIE.so")
  
 #input, output parameters  
 lib.MACIE_LibVersion.restype = c_float  
