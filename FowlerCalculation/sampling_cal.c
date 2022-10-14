@@ -13,6 +13,8 @@
 //rm -f sampling_cal.o sampling_cal.so
 //g++ -fPIC -c sampling_cal.c
 //g++ -shared -o libsampling_cal.so sampling_cal.o
+//gcc -fPIC -c sampling_cal.c
+//gcc -shared -o libsampling_cal.so sampling_cal.o
 
 extern "C"
 {
