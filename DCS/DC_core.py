@@ -734,7 +734,8 @@ class DC(threading.Thread):
         if self.samplingMode == UTR_MODE:
             getByte = FRAME_X * FRAME_Y * 2 * self.reads * self.groups * self.ramps
             #triggerTimeout = triggerTimeout + (T_frame * self.reads * self.groups * self.ramps * self.drops) * 1000
-            triggerTimeout = triggerTimeout + ((T_frame * self.resets) + self.expTime) * self.ramps * 1000
+            # 1000 -> 10000: increse wating time for long exposure
+            triggerTimeout = triggerTimeout + ((T_frame * self.resets) + T_frame * self.drops * self.groups) * self.ramps * 10000
 
             print("triggerTimeout 2:", triggerTimeout)
 
