@@ -37,7 +37,7 @@ def cal_mean(path):
     for row in range(4, 2044):
         left_right_sum += np.sum(img[row][2044:2048])
 
-    total_aver = (top_bottom_sum + left_right_sum) / ((2048*8) + (2040*8))
+    offset_aver = (top_bottom_sum + left_right_sum) / ((2048*8) + (2040*8))
 
     '''
     top_bottom_sum2, left_right_sum2 = 0, 0
@@ -63,7 +63,7 @@ def cal_mean(path):
 
     #print(top_bottom_sum, left_right_sum, total_aver)
     
-    return _mean, total_aver
+    return _mean, offset_aver
     
 
 #path = "/DCS/Data/CDSNoise/20220927_024513/Result/CDSNoise.fits"
