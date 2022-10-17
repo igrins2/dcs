@@ -129,8 +129,7 @@ class MainWindow(Ui_MainWindow, QMainWindow):
             if self.dc.samplingMode == FOWLER_MODE:
                 
                 self.e_exp_time.setEnabled(True)
-                self.e_fowler_number.setEnabled(True)
-
+                self.e_fowler_number.setEnabled(False)
                 self.radio_exp_time.show()
                 self.radio_fowler_number.show()
             
@@ -319,14 +318,16 @@ class MainWindow(Ui_MainWindow, QMainWindow):
     # Buttons           
 
     def initialize1(self, ics=False):
-        self.dc.Initialize(int(self.e_timeout.text()), ics)
+        res = self.dc.Initialize(int(self.e_timeout.text()), ics)
         info = "%s (%d)" % (self.dc.LibVersion(), self.dc.macieSN)
         self.label_ver.setText(info)
-        self.btn_initialize1.setEnabled(False)
+        if res == True:
+            self.btn_initialize1.setEnabled(False)
 
 
     def initialize2(self):
-        self.dc.Initialize2()
+        if self.dc.Initialize2() == True:
+            self.btn_initialize2.setEnabled(False)
 
 
     def reset(self, ics=False):
@@ -467,17 +468,18 @@ class MainWindow(Ui_MainWindow, QMainWindow):
     def set_ROImode(self):
         if self.chk_ROI_mode.isChecked():
             self.dc.ROIMode = True
-
-            self.dc.x_start = int(self.e_x_start.text())
-            self.dc.x_stop = int(self.e_x_stop.text())
-            self.dc.y_start = int(self.e_y_start.text())
-            self.dc.y_stop = int(self.e_y_stop.text())
         else:
             self.dc.ROIMode = False
        
 
     # thread
     def acquireramp(self):
+        if self.dc.ROIMode:
+            self.dc.x_start = int(self.e_x_start.text())
+            self.dc.x_stop = int(self.e_x_stop.text())
+            self.dc.y_start = int(self.e_y_start.text())
+            self.dc.y_stop = int(self.e_y_stop.text())
+
         self.dc.logwrite(BOTH, "[TEST] " + CMD_ACQUIRERAMP + " Start")
 
         self.dc.save_as = self.chk_autosave.isChecked()
@@ -500,8 +502,12 @@ class MainWindow(Ui_MainWindow, QMainWindow):
 
 
     def start_acquisition(self, ics=False):
-        self.dc.AcquireRamp()
-        self.dc.ImageAcquisition(ics)
+        if self.dc.ROIMode:
+            self.dc.AcquireRamp_window()
+            self.dc.ImageAcquisition_window(ics)
+        else:
+            self.dc.AcquireRamp()
+            self.dc.ImageAcquisition(ics)
       
 
 
