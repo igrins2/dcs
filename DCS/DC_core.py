@@ -30,11 +30,6 @@ import tunning as tn
 
 import threading
 
-#for c
-#lib2 = CDLL("/home/dcss/workspace/dcs-master/FowlerCalculation/libsampling_cal.so")
-#lib2.fowler_calculation.argtypes = [c_int, c_int, c_int, POINTER(c_ushort)]
-#lib2.fowler_calculation.restype = POINTER(c_float)
-
 #for c++
 lib2 = cdll.LoadLibrary("/home/dcsh/workspace/dcs/FowlerCalculation/libsampling_cal.so")
 fowler_calculation = lib2.fowler_calculation

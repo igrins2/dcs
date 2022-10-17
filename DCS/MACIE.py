@@ -9,14 +9,6 @@ MACIE_USB = 1
 MACIE_GigE = 2
 MACIE_UART = 3
 
-#MACIE_STATUS = {0:MACIE_OK, 1:MACIE_FAIL}
-#MACIE_Connection = {0:MACIE_NONE, 1: MACIE_USB, 2:MACIE_GigE, 3:MACIE_UART}
-
-#class MACIE_IpAddr(Structure):
-#    _fields_ = [("ipAddr", c_ubyte*4)]
-class MACIE_IpAddr(Structure):
-    _fields_ = [("ipAddr", c_ubyte*4)]
-
 class MACIE_CardInfo(Structure):
     _fields_ = [("macieSerialNumber", c_ushort),
                 ("bUART", c_bool),
@@ -37,18 +29,6 @@ HDR_STR = 2
 #need to check!!!
 MACIE_ERROR_COUNTERS = 33
 
-#Fits_HdrType = {0:HDR_INT, 1:HDR_FLOAT, 2:HDR_STR}
-
-'''
-class MACIE_FitsHdr(Structure):
-    _fields_ = [("key", c_char*9),
-                ("valType", c_int),
-                ("iVal", c_int),
-                ("fVal", c_float),
-                ("sVal", c_char*72),
-                ("comment", c_char*72)]
-'''
-
 lib = CDLL("/home/dcsh/macie_v5.2_centos/MacieApp/libMACIE.so")
  
 #input, output parameters  
@@ -59,9 +39,6 @@ lib.MACIE_Init.restype = c_int
 
 lib.MACIE_SetGigeTimeout.argtypes = [c_ushort]
 lib.MACIE_SetGigeTimeout.restype = c_int
-
-lib.MACIE_CheckInterfaces.argtypes = [c_ushort, POINTER(MACIE_IpAddr), c_ushort, POINTER(c_ushort), POINTER(POINTER(MACIE_CardInfo))]
-lib.MACIE_CheckInterfaces.restype = c_int
 
 lib.MACIE_GetHandle.argtypes = [c_ushort, c_int]
 lib.MACIE_GetHandle.restype = c_ulong
@@ -113,9 +90,6 @@ lib.MACIE_ReadGigeScienceFrame.restype = POINTER(c_ushort)
 
 lib.MACIE_CloseGigeScienceInterface.argtypes = [c_ulong, c_ubyte]
 lib.MACIE_CloseGigeScienceInterface.restype = c_int
-
-#lib.MACIE_WriteFitsFile.argtypes = [c_char_p, c_ushort, c_ushort, POINTER(c_ushort), c_ushort, POINTER(MACIE_FitsHdr)]
-#lib.MACIE_WriteFitsFile.restype = c_int
 
 lib.MACIE_GetTelemetryAll.argtypes = [c_ulong, c_ubyte, POINTER(c_float)]
 lib.MACIE_GetTelemetryAll.restype = c_int
