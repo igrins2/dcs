@@ -46,10 +46,8 @@
      <property name="geometry">
       <rect>
        <x>90</x>
-       <x>110</x>
        <y>30</y>
        <width>81</width>
-       <width>41</width>
        <height>21</height>
       </rect>
      </property>
@@ -61,7 +59,6 @@
      <property name="geometry">
       <rect>
        <x>330</x>
-       <x>310</x>
        <y>30</y>
        <width>41</width>
        <height>23</height>
@@ -161,7 +158,6 @@
      <property name="geometry">
       <rect>
        <x>40</x>
-       <x>60</x>
        <y>30</y>
        <width>41</width>
        <height>21</height>
@@ -178,7 +174,6 @@
      <property name="geometry">
       <rect>
        <x>170</x>
-       <x>150</x>
        <y>30</y>
        <width>151</width>
        <height>21</height>
@@ -519,7 +514,6 @@
      <property name="geometry">
       <rect>
        <x>65</x>
-       <x>90</x>
        <y>50</y>
        <width>41</width>
        <height>23</height>
@@ -538,14 +532,12 @@
      </property>
      <property name="readOnly">
       <bool>false</bool>
-      <bool>true</bool>
      </property>
     </widget>
     <widget class="QLineEdit" name="e_resets">
      <property name="geometry">
       <rect>
        <x>15</x>
-       <x>40</x>
        <y>50</y>
        <width>41</width>
        <height>23</height>
@@ -567,7 +559,6 @@
      <property name="geometry">
       <rect>
        <x>115</x>
-       <x>140</x>
        <y>50</y>
        <width>41</width>
        <height>23</height>
@@ -586,17 +577,14 @@
      </property>
      <property name="readOnly">
       <bool>false</bool>
-      <bool>true</bool>
      </property>
     </widget>
     <widget class="QLineEdit" name="e_drops">
      <property name="geometry">
       <rect>
        <x>160</x>
-       <x>190</x>
        <y>50</y>
        <width>71</width>
-       <width>41</width>
        <height>23</height>
       </rect>
      </property>
@@ -613,7 +601,6 @@
      </property>
      <property name="readOnly">
       <bool>false</bool>
-      <bool>true</bool>
      </property>
     </widget>
     <widget class="QLineEdit" name="e_ramps">
@@ -728,7 +715,6 @@ Parameters</string>
      <property name="geometry">
       <rect>
        <x>10</x>
-       <x>35</x>
        <y>30</y>
        <width>51</width>
        <height>21</height>
@@ -753,7 +739,6 @@ Parameters</string>
      <property name="geometry">
       <rect>
        <x>59</x>
-       <x>84</x>
        <y>30</y>
        <width>51</width>
        <height>21</height>
@@ -778,7 +763,6 @@ Parameters</string>
      <property name="geometry">
       <rect>
        <x>110</x>
-       <x>135</x>
        <y>30</y>
        <width>51</width>
        <height>21</height>
@@ -803,7 +787,6 @@ Parameters</string>
      <property name="geometry">
       <rect>
        <x>170</x>
-       <x>185</x>
        <y>30</y>
        <width>51</width>
        <height>21</height>

@@ -10,17 +10,15 @@
 #define CDSNOISE_MODE   2
 #define FOWLER_MODE 3
 
-//rm -f sampling_cal.o sampling_cal.so
+//rm -f sampling_cal.o libsampling_cal.so
 //g++ -fPIC -c sampling_cal.c
 //g++ -shared -o libsampling_cal.so sampling_cal.o
-//gcc -fPIC -c sampling_cal.c
-//gcc -shared -o libsampling_cal.so sampling_cal.o
 
 extern "C"
 {
     float* fowler_calculation(int mode, int f_num, int count, unsigned short *indata)
     {
-        printf("%d %d %d\r\n", mode, f_num, count);
+        //printf("%d %d %d\r\n", mode, f_num, count);
     
         //float* findata = (float*)malloc(FRAME_X*FRAME_Y*sizeof(float)*count);
         //memset(findata, 0, FRAME_X*FRAME_Y*sizeof(float)*count);
@@ -64,7 +62,7 @@ extern "C"
         //for 64pix    
         int ch_pix_cnt = (int)(FRAME_X / channel);
 
-        printf("1. referece pixel subtraction !!!\r\n");
+        //printf("1. referece pixel subtraction !!!\r\n");
         //---------------------------------------------------------------
         //1. refer pixel subtraction
         int frame = 0;
@@ -153,7 +151,7 @@ extern "C"
         int col=2;
         //("%d, %d: img0-%f, img1-%f, img2-%f, img3-%f\r\n", row, col, img[0][FRAME_X * row + col], img[1][FRAME_X * row + col], img[2][FRAME_X * row + col], img[3][FRAME_X * row + col]);
 
-        printf("2. sampling calculation !!!\r\n");
+        //printf("2. sampling calculation !!!\r\n");
 
         //---------------------------------------------------------------
         //2. fowler calculationsqrt
@@ -178,7 +176,7 @@ extern "C"
             delete img;
             printf("size: %d\r\n", FRAME_X * FRAME_Y*sizeof(float));
 
-            printf("Finished !!!\r\n");
+            //printf("Finished !!!\r\n");
 
             return res;
         }
@@ -192,13 +190,13 @@ extern "C"
                 for (int row = 0; row < FRAME_Y; row++) {
                     for (int col = 0; col < FRAME_X; col++){
                         res[(FRAME_X*FRAME_Y*r) + (FRAME_X * row) + col] = img[ramps*r + 1][(FRAME_X * row) + col] - img[ramps*r][(FRAME_X * row) + col];
-                        if(row==2 && col==2)
-                            printf("%d, %d %d: %f = %f - %f\r\n", r, row, col, res[(FRAME_X*FRAME_Y*r) + (FRAME_X * row) + col], img[ramps*r + 1][(FRAME_X * row) + col], img[ramps*r][(FRAME_X * row) + col]);
+                        //if(row==2 && col==2)
+                        //    printf("%d, %d %d: %f = %f - %f\r\n", r, row, col, res[(FRAME_X*FRAME_Y*r) + (FRAME_X * row) + col], img[ramps*r + 1][(FRAME_X * row) + col], img[ramps*r][(FRAME_X * row) + col]);
                     }
                 }
             }
 
-            printf("1\r\n");
+            //printf("1\r\n");
 
             for (int i = 0; i < 4; i++)
                 //free(img[i]);
@@ -206,18 +204,18 @@ extern "C"
             //free(img); 
             delete img;
 
-            printf("2\r\n");
+            //printf("2\r\n");
 
             //for 1 result
             for (int row = 0; row < FRAME_Y; row++) {
                 for (int col = 0; col < FRAME_X; col++){
                     res[(FRAME_X*FRAME_Y*2) + (FRAME_X * row) + col] = (res[(FRAME_X*FRAME_Y) + (FRAME_X * row) + col] - res[(FRAME_X * row) + col]) / sqrt(2);
-                    if(row==2 && col==2)
-                        printf("%d, %d: %f = %f - %f\r\n", row, col, res[(FRAME_X*FRAME_Y*2) + (FRAME_X * row) + col], res[(FRAME_X*FRAME_Y) + (FRAME_X * row) + col], res[(FRAME_X * row) + col]);
+                    //if(row==2 && col==2)
+                    //    printf("%d, %d: %f = %f - %f\r\n", row, col, res[(FRAME_X*FRAME_Y*2) + (FRAME_X * row) + col], res[(FRAME_X*FRAME_Y) + (FRAME_X * row) + col], res[(FRAME_X * row) + col]);
                 }
             }
 
-            printf("Finished !!!\r\n");
+            //printf("Finished !!!\r\n");
 
             return res;
         }
@@ -234,6 +232,7 @@ extern "C"
                         if(n == 0)  res[(FRAME_X * row) + col] = 0;
                         res[(FRAME_X * row) + col] += img[reads + n][(FRAME_X * row) + col] - img[n][(FRAME_X * row) + col];
                     }
+Available ASICs = 1
                 }
             }
 
