@@ -10,7 +10,7 @@
 #define CDSNOISE_MODE   2
 #define FOWLER_MODE 3
 
-//rm -f sampling_cal.o libsampling_cal.so
+//rm -f sampling_cal.o sampling_cal.so
 //g++ -fPIC -c sampling_cal.c
 //g++ -shared -o libsampling_cal.so sampling_cal.o
 
@@ -174,7 +174,7 @@ extern "C"
             delete img[0];
             delete img[1];
             delete img;
-            printf("size: %d\r\n", FRAME_X * FRAME_Y*sizeof(float));
+            //printf("size: %d\r\n", FRAME_X * FRAME_Y*sizeof(float));
 
             //printf("Finished !!!\r\n");
 
@@ -232,27 +232,26 @@ extern "C"
                         if(n == 0)  res[(FRAME_X * row) + col] = 0;
                         res[(FRAME_X * row) + col] += img[reads + n][(FRAME_X * row) + col] - img[n][(FRAME_X * row) + col];
                     }
-Available ASICs = 1
                 }
             }
 
             for (int i = 0; i < reads * 2; i++){
                 //free(img[i]); 
                 delete img[i];
-                printf("Memory released!");
+                //printf("Memory released!");
             }
 
             //free(img); 
             delete img;
 
-            printf("Main Memory released!");
+            //printf("Main Memory released!");
 
             for (int row = 0; row < FRAME_Y; row++) {
                 for (int col = 0; col < FRAME_X; col++)
                     res[(FRAME_X * row) + col] /= reads;
             }
 
-            printf("Finished !!!\r\n");
+            //printf("Finished !!!\r\n");
 
             return res;
         }

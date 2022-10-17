@@ -617,21 +617,9 @@ class DC(threading.Thread):
         res[4] = lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_NRamps, self.ramps, self.option)
 
         if self.samplingMode == UTR_MODE:
-            if self.ROIMode == True:
-                res[5] = lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_HxRGExpModeVal, 2, self.option)  # UTR, window
-                winarr = [self.xStart, self.xStop,
-                          self.yStart, self.yStop]  # x1, x2, y1, y2
-                wr = lib.MACIE_WriteASICBlock(self.handle, self.slctASICs, ASICAddr_WinArr, winarr, 4, self.option)
-            else:
-                res[5] = lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_HxRGExpModeVal, 0, self.option)  # UTR, Full frame
+            res[5] = lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_HxRGExpModeVal, 0, self.option)  # UTR, Full frame
         else:
-            if self.ROIMode == True:
-                res[5] = lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_HxRGExpModeVal, 3, self.option)  # FS, window
-                winarr = [self.xStart, self.xStop,
-                          self.yStart, self.yStop]  # x1, x2, y1, y2
-                wr = lib.MACIE_WriteASICBlock(self.handle, self.slctASICs, ASICAddr_WinArr, winarr, 4, self.option)
-            else:
-                res[5] = lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_HxRGExpModeVal, 1, self.option)  # FS, Full frame
+            res[5] = lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_HxRGExpModeVal, 1, self.option)  # FS, Full frame
         res[6] = lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_State, 0x8002, self.option)
 
         for i in range(7):
@@ -650,17 +638,9 @@ class DC(threading.Thread):
         # step 2.science interface
         frameSize = 0
         if self.samplingMode == UTR_MODE:
-            if self.ROIMode == True:
-                frameSize = (self.xStop - self.xStart + 1) * \
-                    (self.yStop - self.yStart + 1)
-            else:
-                frameSize = FRAME_X * FRAME_Y * self.reads * self.groups * self.ramps
+            frameSize = FRAME_X * FRAME_Y * self.reads * self.groups * self.ramps
         else:
-            if self.ROIMode == True:
-                frameSize = (self.xStop - self.xStart + 1) * \
-                    (self.yStop - self.yStart + 1)
-            else:
-                frameSize = FRAME_X * FRAME_Y * 2 * self.reads * self.ramps
+            frameSize = FRAME_X * FRAME_Y * 2 * self.reads * self.ramps
 
         arr_list = []
         arr = np.array(arr_list)
@@ -689,13 +669,95 @@ class DC(threading.Thread):
             self.logwrite(BOTH, msg)
             return False
 
-        if lib.MACIE_WriteASICReg(self.handle, self.slctMACIEs, ASICAddr_State, 0x8001, self.option) != MACIE_OK:
+        if lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_State, 0x8001, self.option) != MACIE_OK:
             self.logwrite(BOTH, "Triggering " + RET_FAIL)
             return False
 
         self.logwrite(BOTH, "Triggering succeeded")
 
         return True
+
+
+    def AcquireRamp_window(self):
+        if self.handle == 0:
+            return False
+
+        #self.loadimg = []
+
+        self.logwrite(BOTH, "Acquire Science Data....")
+
+        # step 1. ASIC configuration
+        res = [0 for _ in range(6)]
+
+        res[0] = lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_ASICInputRefVal, self.preampInputScheme, self.option)
+        res[1] = lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_PreAmpReg1Ch1ENAddr, self.preampInputVal, self.option)
+        res[2] = lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_ASICPreAmpGainVal, self.preampGain, self.option)
+        res[3] = lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_NReads, 1, self.option)
+
+        
+        res[4] = lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_HxRGExpModeVal, 2, self.option)  # UTR, window
+        arr_list = [self.x_start, self.x_stop, self.y_start, self.y_stop] # x1, x2, y1, y2
+        arr = np.array(arr_list)
+        winarr = arr.ctypes.data_as(POINTER(c_uint))
+        wr = lib.MACIE_WriteASICBlock(self.handle, self.slctASICs, ASICAddr_WinArr, winarr, 4, self.option)
+
+        res[5] = lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_State, 0x8002, self.option)
+
+        for i in range(6):
+            if res[i] != MACIE_OK:
+                self.logwrite(BOTH, "ASIC configuration failed - write ASIC registers")
+                return False
+
+        ti.sleep(1.5)
+
+        val, sts = self.read_ASIC_reg(ASICAddr_State)
+        if (val[0] & 1) != 0 or sts != MACIE_OK:
+            self.logwrite(BOTH, "ASIC configuration for shorted preamp inputs failed")
+            return False
+        self.logwrite(BOTH, "Configuration succeeded")
+
+        # step 2.science interface
+        frameSize = (self.x_stop - self.x_start + 1) * (self.y_stop - self.y_start + 1)
+
+        arr_list = []
+        arr = np.array(arr_list)
+        buf = arr.ctypes.data_as(POINTER(c_int))
+
+        sts = lib.MACIE_ConfigureGigeScienceInterface(self.handle, self.slctMACIEs, 0, frameSize, 42037, buf)  # 0-16bit
+        if sts != MACIE_OK:
+            msg = "Science interface configuration failed. buf = %d" % buf[0]
+            self.logwrite(BOTH, msg)
+            return False
+        msg = "Science interface configuration succeeded. buf (KB) = %d" % buf[0]
+        self.logwrite(BOTH, msg)
+
+        # step 3.trigger ASIC to read science data
+        self.logwrite(BOTH, "Trigger image acquisition....")
+
+        # make sure h6900 bit<0> is 0 before triggering.
+
+        val, sts = self.read_ASIC_reg(ASICAddr_State)
+        if sts != MACIE_OK:
+            msg = "Read ASIC h%04x failed" % ASICAddr_State
+            self.logwrite(BOTH, msg)
+            return False
+        if (val[0] & 1) != 0:
+            msg = "Configure idle mode by writing ASIC h%04x failed" % ASICAddr_State
+            self.logwrite(BOTH, msg)
+            return False
+
+        if lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_NReads, 15, self.option) != MACIE_OK:
+            self.logwrite(BOTH, "write ASIC h4001 " + RET_FAIL)
+            return False
+
+        if lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_State, 0x8001, self.option) != MACIE_OK:
+            self.logwrite(BOTH, "Triggering " + RET_FAIL)
+            return False
+
+        self.logwrite(BOTH, "Triggering succeeded")
+
+        return True
+
 
     
     def StopAcquisition(self, ics):
@@ -728,7 +790,6 @@ class DC(threading.Thread):
         getByte = 0
         if self.samplingMode == UTR_MODE:
             getByte = FRAME_X * FRAME_Y * 2 * self.reads * self.groups * self.ramps
-            #triggerTimeout = triggerTimeout + (T_frame * self.reads * self.groups * self.ramps * self.drops) * 1000
             # 1000 -> 10000: increse wating time for long exposure
             triggerTimeout = triggerTimeout + ((T_frame * self.resets) + T_frame * self.drops * self.groups) * self.ramps * 10000
 
@@ -736,8 +797,7 @@ class DC(threading.Thread):
 
         else:
             getByte = FRAME_X * FRAME_Y * 2 * 2 * self.reads * self.ramps
-            #triggerTimeout =  triggerTimeout + (2 * self.reads * self.ramps * T_frame + self.fowlerTime) * 1000
-            triggerTimeout = triggerTimeout + ((T_frame * self.dc.resets) + self.dc.fowlerTime + (2 * T_frame * self.dc.reads)) * self.dc.ramps * 1000
+            triggerTimeout = triggerTimeout + ((T_frame * self.resets) + self.fowlerTime + (2 * T_frame * self.reads)) * self.ramps * 1000
             
             print("triggerTimeout 2:", self.fowlerTime, triggerTimeout)
 
@@ -749,10 +809,7 @@ class DC(threading.Thread):
                     byte, i)
                 self.logwrite(BOTH, msg)
                 break
-            if self.ROIMode == True:
-                self.logwrite(BOTH, "Wait (ROI)....")
-            else:
-                self.logwrite(BOTH, "Wait....")
+            self.logwrite(BOTH, "Wait....")
             ti.sleep(triggerTimeout / 100 / 1000)
 
         if byte <= 0:
@@ -764,13 +821,10 @@ class DC(threading.Thread):
         arr = np.array(arr_list)
         data = arr.ctypes.data_as(POINTER(c_ushort))
         
-        data = lib.MACIE_ReadGigeScienceFrame(self.handle, int(1500 + triggerTimeout))
-
+        data = lib.MACIE_ReadGigeScienceFrame(self.handle, int(1500 + 5000))
+        print(data)
         if data == None:
-            if self.ROIMode:
-                self.logwrite(BOTH, "Null frame (ROI)")
-            else:
-                self.logwrite(BOTH, "Null frame")
+            self.logwrite(BOTH, "Null frame")
             return False
 
         frmcnt = 0
@@ -808,6 +862,73 @@ class DC(threading.Thread):
         return True
 
 
+    def ImageAcquisition_window(self, ics):
+        if self.handle == 0:
+            return False
+
+        # Wait for available science data bytes
+        idleReset, moreDelay = 1, 4000
+        triggerTimeout = (T_frame * 1000) * (self.resets + idleReset) + moreDelay  # delay time for one frame
+        print("triggerTimeout:", triggerTimeout)
+
+        ti.sleep(1.5)
+        
+        getByte, frameSize = 0, 0
+        frameSize = (self.x_stop - self.x_start + 1) * (self.y_stop - self.y_start + 1)
+        getByte = frameSize * 2
+        
+        byte = 0        
+        for i in range(20):
+            byte = lib.MACIE_AvailableScienceData(self.handle)
+            #if byte >= getByte:
+            if byte > 0:
+                msg = "Available science data = %d bytes, Loop = %d" % (
+                    byte, i)
+                self.logwrite(BOTH, msg)
+                break
+            self.logwrite(BOTH, "Wait (ROI)....")
+            ti.sleep(triggerTimeout / 10 / 1000)
+
+        if byte <= 0:
+            self.logwrite(BOTH, "Trigger timeout: no available science data")
+            return False
+
+        #data = None
+        arr_list = []
+        arr = np.array(arr_list)
+        data = arr.ctypes.data_as(POINTER(c_ushort))
+        
+        data = lib.MACIE_ReadGigeScienceFrame(self.handle, int(1500 + 5000))
+
+        if data == None:
+            self.logwrite(BOTH, "Null frame (ROI)")
+            return False
+
+        print(data)
+        self.loadimg = data
+        #self.loadimg.append(data)
+        #print(self.loadimg)
+
+        lib.MACIE_CloseGigeScienceInterface(self.handle, self.slctMACIEs)
+
+        self.WriteFitsFile_window()
+
+        if ics == True:
+            self.send_message(CMD_ACQUIRERAMP + " OK")
+
+        elif self.save_as == True:
+            ss = SaveAsDlg(self)
+            res = ss.showModal()
+            if res == QDialog.Accepted:
+                print("Exit")
+            elif res == QDialog.Rejected:
+                print("Exit 2")
+
+        self.logwrite(BOTH, "[TEST] " + CMD_ACQUIRERAMP + " OK")
+
+        return True
+
+
     def createFolder(self, dir):
         try:
             if not os.path.exists(dir):
@@ -817,10 +938,7 @@ class DC(threading.Thread):
 
 
     def WriteFitsFile(self):
-        if self.ROIMode == True:
-            self.logwrite(BOTH, "Write Fits file now (ROI)....")
-        else:
-            self.logwrite(BOTH, "Write Fits file now....")
+        self.logwrite(BOTH, "Write Fits file now....")
 
         _t = datetime.datetime.utcnow()
 
@@ -942,8 +1060,38 @@ class DC(threading.Thread):
         #-----------------------------------------------------------------------
         
         duration = ti.time() - startime
-        tmp = "%.3f" % duration
+        tmp = "fowler calculation time: %.3f" % duration
         self.logwrite(BOTH, tmp)
+
+    
+    def WriteFitsFile_window(self):
+        self.logwrite(BOTH, "Write Fits file now (ROI)....")
+    
+        _t = datetime.datetime.utcnow()
+
+        cur_datetime = [_t.year, _t.month, _t.day, _t.hour, _t.minute, _t.second, _t.microsecond]
+
+        path = "%s/Data/" % self.exe_path
+        self.createFolder(path)
+
+        path += "ROI/"
+        self.createFolder(path)
+
+        #str = time.strftime("%Y%m%d_%H%M%S", time.localtime(time.time()))
+        str = "%04d%02d%02d_%02d%02d%02d" % (cur_datetime[0], cur_datetime[1], cur_datetime[2], cur_datetime[3], cur_datetime[4], cur_datetime[5])
+        path += str + "/"
+        self.createFolder(path)
+
+        filename = "%sH2RG_R01_M01_N01.fits" % path
+        sts = self.save_fitsfile_sub(0, filename, cur_datetime, 1, 1, 1)
+
+        if sts != MACIE_OK:
+            self.logwrite(BOTH, self.GetErrMsg())
+            return -1
+        else:
+            self.logwrite(BOTH, filename)
+
+
 
     def save_fitsfile_sub(self, idx, filename, cur_datetime, ramp, group, read):
         
@@ -1118,14 +1266,19 @@ class DC(threading.Thread):
         pHeaders[header_cnt] = MACIE_FitsHdr(key="SEQNNAME".encode(), valType=HDR_STR, sVal=str.encode(), comment="Ramp and Group String".encode())
         header_cnt += 1
 
-        arr = np.array(self.loadimg[idx], dtype=np.int16)
-        data = arr.ctypes.data_as(POINTER(c_ushort))
-        sts = lib.MACIE_WriteFitsFile(c_char_p(filename.encode()), FRAME_X, FRAME_Y, data, header_cnt, pHeaders)
+        if self.ROIMode:
+            arr = np.array(self.loadimg, dtype=np.int16)
+            data = arr.ctypes.data_as(POINTER(c_ushort))
+            sts = lib.MACIE_WriteFitsFile(c_char_p(filename.encode()), self.x_stop - self.x_start + 1, self.y_stop - self.y_start + 1, data, header_cnt, pHeaders)
+        else:
+            arr = np.array(self.loadimg[idx], dtype=np.int16)
+            data = arr.ctypes.data_as(POINTER(c_ushort))
+            sts = lib.MACIE_WriteFitsFile(c_char_p(filename.encode()), FRAME_X, FRAME_Y, data, header_cnt, pHeaders)
         
         # for tunning test
         if self.samplingMode == UTR_MODE:
-            mean, offset = tn.cal_mean(filename)
-            tunning = "%s: %.4f, %.4f" % (self.V_refmain, offset, mean)
+            offset, active = tn.cal_mean(filename)
+            tunning = "%s: %.4f, %.4f" % (self.V_refmain, offset, active)
             self.logwrite(BOTH, tunning)
 
         return sts
@@ -1235,6 +1388,11 @@ if __name__ == "__main__":
 
     dc.samplingMode = 0 #0~3
 
+    dc.SetRampParam(1, 1, 1, 0, 1, False)
+    #dc.AcquireRamp()
+    #dc.ImageAcquisition(False)
+    
+    '''
     dc.fowlerTime = 0
     dc.expTime = 0.168
     if dc.samplingMode == 0:
@@ -1245,10 +1403,12 @@ if __name__ == "__main__":
         dc.SetFSParam(1, 1, 1, dc.fowlerTime, 2, False)
     elif dc.samplingMode == 3:
         dc.SetFSParam(1, 16, 1, dc.fowlerTime, 1, False)
+    '''
 
-    dc.AcquireRamp()
+    dc.ROIMode = True
+    dc.AcquireRamp_window()
+    dc.ImageAcquisition_window(False)
 
-    dc.ImageAcquisition(False)
 
 '''
     lastfilename = self.exe_path + "/Data/CDS/20220602_090341/H2RG_R01_M01_N02.fits"
