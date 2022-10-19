@@ -1862,6 +1862,75 @@ Parameters</string>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
+ <tabstops>
+  <tabstop>e_timeout</tabstop>
+  <tabstop>cmb_ouput_channels</tabstop>
+  <tabstop>btn_initialize1</tabstop>
+  <tabstop>btn_initialize2</tabstop>
+  <tabstop>btn_reset</tabstop>
+  <tabstop>btn_download_MCD</tabstop>
+  <tabstop>btn_set_detector</tabstop>
+  <tabstop>btn_error_cnt</tabstop>
+  <tabstop>radio_UTR</tabstop>
+  <tabstop>radio_CDS</tabstop>
+  <tabstop>radio_CDSNoise</tabstop>
+  <tabstop>radio_Fowler</tabstop>
+  <tabstop>e_resets</tabstop>
+  <tabstop>e_reads</tabstop>
+  <tabstop>e_groups</tabstop>
+  <tabstop>e_drops</tabstop>
+  <tabstop>e_ramps</tabstop>
+  <tabstop>radio_exp_time</tabstop>
+  <tabstop>radio_fowler_number</tabstop>
+  <tabstop>e_exp_time</tabstop>
+  <tabstop>e_fowler_number</tabstop>
+  <tabstop>btn_set_param</tabstop>
+  <tabstop>chk_ROI_mode</tabstop>
+  <tabstop>e_x_start</tabstop>
+  <tabstop>e_x_stop</tabstop>
+  <tabstop>e_y_start</tabstop>
+  <tabstop>e_y_stop</tabstop>
+  <tabstop>e_repeat</tabstop>
+  <tabstop>btn_acquireramp</tabstop>
+  <tabstop>btn_stop</tabstop>
+  <tabstop>cmb_combine_line</tabstop>
+  <tabstop>chk_show_fits</tabstop>
+  <tabstop>chk_autosave</tabstop>
+  <tabstop>btn_get_telemetry</tabstop>
+  <tabstop>e_config_dir</tabstop>
+  <tabstop>btn_find_config_dir</tabstop>
+  <tabstop>e_MACIE_reg</tabstop>
+  <tabstop>btn_find_MACIE_reg</tabstop>
+  <tabstop>e_ASIC_firmware</tabstop>
+  <tabstop>btn_find_ASIC_firware</tabstop>
+  <tabstop>e_img_dir</tabstop>
+  <tabstop>btn_find_img_dir</tabstop>
+  <tabstop>e_addr_Vreset</tabstop>
+  <tabstop>e_write_Vreset</tabstop>
+  <tabstop>e_read_Vreset</tabstop>
+  <tabstop>btn_write_Vreset</tabstop>
+  <tabstop>btn_read_Vreset</tabstop>
+  <tabstop>e_addr_Dsub</tabstop>
+  <tabstop>e_write_Dsub</tabstop>
+  <tabstop>e_read_Dsub</tabstop>
+  <tabstop>btn_write_Dsub</tabstop>
+  <tabstop>btn_read_Dsub</tabstop>
+  <tabstop>e_addr_Vbiasgate</tabstop>
+  <tabstop>e_write_Vbiasgate</tabstop>
+  <tabstop>e_read_Vbiasgate</tabstop>
+  <tabstop>btn_write_Vbiasgate</tabstop>
+  <tabstop>btn_read_Vbiasgate</tabstop>
+  <tabstop>e_addr_Vrefmain</tabstop>
+  <tabstop>e_write_Vrefmain</tabstop>
+  <tabstop>e_read_Vrefmain</tabstop>
+  <tabstop>btn_write_Vrefmain</tabstop>
+  <tabstop>btn_read_Vrefmain</tabstop>
+  <tabstop>e_addr_input</tabstop>
+  <tabstop>e_write_input</tabstop>
+  <tabstop>e_read_input</tabstop>
+  <tabstop>btn_write_input</tabstop>
+  <tabstop>btn_read_input</tabstop>
+ </tabstops>
  <resources/>
  <connections/>
 </ui>

@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'dcs_subCokUrH.ui'
+## Form generated from reading UI file 'dcs_subCAyKpO.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.3.0
+## Created by: Qt User Interface Compiler version 6.3.2
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -56,6 +56,9 @@ class Ui_Dialog(object):
         self.label_29.setGeometry(QRect(10, 50, 81, 21))
         self.label_29.setLayoutDirection(Qt.LeftToRight)
         self.label_29.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
+        QWidget.setTabOrder(self.e_user_dir, self.btn_find_user_dir)
+        QWidget.setTabOrder(self.btn_find_user_dir, self.e_user_file)
+        QWidget.setTabOrder(self.e_user_file, self.btn_save)
 
         self.retranslateUi(Dialog)
 

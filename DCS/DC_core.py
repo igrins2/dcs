@@ -8,6 +8,7 @@ Modified on Aug 28, 2022
 @author: hilee
 """
 
+import subprocess
 import numpy as np
 import astropy.io.fits as fits
 from astropy.time import Time
@@ -31,7 +32,17 @@ import tunning as tn
 import threading
 
 #for c++
-lib2 = cdll.LoadLibrary("/home/dcsh/workspace/dcs/FowlerCalculation/libsampling_cal.so")
+dir = os.getcwd().split("/")
+WORKING_DIR = "/" + dir[1] + "/" + dir[2] + "/"
+TITLE = ""
+if dir[2] == "dcsh":
+    TITLE = "DCSH"
+elif dir[2] == "dcsk":
+    TITLE = "DCSK"
+elif dir[2] == "dcss":
+    TITLE == "DCSS"
+
+lib2 = cdll.LoadLibrary(WORKING_DIR + "workspace/dcs/FowlerCalculation/libsampling_cal.so")
 fowler_calculation = lib2.fowler_calculation
 fowler_calculation.argtypes = (c_int, c_int, c_int, POINTER(c_ushort))
 fowler_calculation.restype = POINTER(c_float)
@@ -61,25 +72,30 @@ class DC(threading.Thread):
 
         #-------------------------------------------------------
         # load ini file
-        cfg = sc.LoadConfig("/DCS/DCS.ini")
+        cfg = sc.LoadConfig(WORKING_DIR + "DCS/DCS.ini")
 
         # ICS
         self.ics_ip_addr = cfg.get('ICS', 'ip_addr')
         self.ics_id = cfg.get('ICS', 'id')
         self.ics_pwd = cfg.get('ICS', 'pwd')
 
-        self.ics_ex = cfg.get('ICS', 'exchange')
-        self.ics_q = cfg.get('ICS', 'routing_key')
+        # DCS ?
+        self.ics_ex = cfg.get(TITLE, 'ics_exchange')
+        self.ics_q = cfg.get(TITLE, 'ics_routing_key')
+
+        self.dcs_ip_addr = cfg.get(TITLE, 'ip_addr')
+        self.dcs_ex = cfg.get(TITLE, 'dcs_exchange')
+        self.dcs_q = cfg.get(TITLE, 'dcs_routing_key')
 
         # DCS
-        self.dcs_ip_addr = cfg.get('DC', 'ip_addr')
-        self.dcs_ex = cfg.get('DC', 'exchange')
-        self.dcs_q = cfg.get('DC', 'routing_key')
-
         self.loadfile_path = cfg.get('DC', 'config-dir')
+        self.loadfile_path = WORKING_DIR + self.loadfile_path
+
         self.macie_file = cfg.get('DC', 'MACIE-Register')
         self.asic_file = cfg.get('DC', 'ASIC-Firmware')
+
         self.exe_path = cfg.get('DC', 'Img-dir')
+        self.exe_path = WORKING_DIR + self.exe_path
 
         self.gige_timeout = cfg.get('DC', 'timeout')
         self.output_channel = cfg.get('DC', 'channel')
@@ -94,7 +110,6 @@ class DC(threading.Thread):
         Cards = MACIE_CardInfo * 2
         self.pCard = Cards()
         self.macieSN = 0
-        self.init = False
 
         self.slctASICs = 0
         self.option = True
@@ -118,7 +133,13 @@ class DC(threading.Thread):
         
         self.loadimg = []
 
+        self.busy = False
+
+        self.measured_startT = 0
+        self.measured_durationT = 0
+
         self.save_as = False    #for engineer
+        self.showfits = False
 
         # RabbitMQ connect
         self.serv = ICS_SERVER(self.ics_ip_addr, self.ics_id, self.ics_pwd, self.ics_ex, self.ics_q, "direct", self.dcs_ex, self.dcs_q)
@@ -210,9 +231,11 @@ class DC(threading.Thread):
 
             ipaddr_array = MACIE_IpAddr
             pIPs = ipaddr_array()
-            pIPs = MACIE_IpAddr(ipAddr = (192, 168, 1, 102))
+            #IPs = MACIE_IpAddr(ipAddr = (192, 168, 1, 100))
+            ip = self.dcs_ip_addr.split(".")
+            IPs = MACIE_IpAddr(ipAddr = (int(ip[0]), int(ip[1]), int(ip[2]), int(ip[3])))
 
-            arr_list = []
+            arr_list = [0,]
             arr = np.array(arr_list)
             #print(arr)
             card = arr.ctypes.data_as(POINTER(c_ushort))
@@ -230,9 +253,7 @@ class DC(threading.Thread):
             if self.pCard == None or res == RET_FAIL:
                 self.logwrite(BOTH, RET_FAIL)
                 return
-
-            #self.slctCard = 0
-
+                
             self.macieSN = self.pCard[self.slctCard].contents.macieSerialNumber
             self.logwrite(BOTH, str(self.macieSN))
             self.logwrite(BOTH, "True" if self.pCard[self.slctCard].contents.bUART == True else "False")
@@ -249,7 +270,6 @@ class DC(threading.Thread):
             #self.logwrite(BOTH, self.pCard[self.slctCard].contents.usbSpeed) 
 
             #if self.ip_addr == ipaddr:
-            
 
             return ipaddr
 
@@ -272,17 +292,22 @@ class DC(threading.Thread):
 
         # self.InitBuffer()
 
+        self.busy = True
+
         # 1. init
         if self.Init() == MACIE_FAIL:
+            self.busy = False
             return -1
 
         # 2. SetGigeTimeout
         if self.SetGigeTimeout(timeout) == False:
+            self.busy = False
             return -2
         
         # 3. CheckInterfaces
         _ip = self.CheckInterfaces()
         if _ip == None:
+            self.busy = False
             return -3
         while(_ip != self.dcs_ip_addr):
             ti.sleep(0.5)
@@ -296,7 +321,7 @@ class DC(threading.Thread):
         if ics == True:
             self.send_message(CMD_INITIALIZE1 + " OK")
 
-        self.init = True
+        self.busy = False
 
         return 1
 
@@ -306,15 +331,19 @@ class DC(threading.Thread):
         if self.handle == 0:
             return False
 
+        self.busy = True
+
         msg = "Initialize with handle: %ld" % self.handle
         self.logwrite(BOTH, msg)
 
         # step 1. GetAvailableMACIEs
         if self.GetAvailableMACIEs() == False:
+            self.busy = False
             return False
 
         if self.slctMACIEs == 0:
             self.logwrite(BOTH, "MACIE0 is not available")
+            self.busy = False
             return False
 
         arr_list = []
@@ -325,18 +354,21 @@ class DC(threading.Thread):
         if lib.MACIE_loadMACIEFirmware(self.handle, self.slctMACIEs, self.slot1, val) != MACIE_OK:
             #msg = "LOAD MACIE firmware " + RET_FAIL + ": " + self.GetErrMsg()
             self.logwrite(BOTH, self.GetErrMsg())
+            self.busy = False
             return False
         if val[0] != 0xac1e:
             msg = "Verification of MACIE firmware load failed: readback of hFFFB = %d" % val[0]
             self.logwrite(BOTH, msg)
+            self.busy = False
             return False
         self.logwrite(BOTH, "Load MACIE firmware " + RET_OK)
 
         # step 3. download MACIE registers
-        file = self.loadfile_path + "/" + self.macie_file
+        file =  self.loadfile_path + "/" + self.macie_file
         if lib.MACIE_DownloadMACIEFile(self.handle, self.slctMACIEs, file.encode()) != MACIE_OK:
             #msg = RET_FAIL + ": " + self.GetErrMsg()
             self.logwrite(BOTH, self.GetErrMsg())
+            self.busy = False
             return False
         self.logwrite(BOTH, "Download MACIE register file " + RET_OK)
 
@@ -356,6 +388,8 @@ class DC(threading.Thread):
 
         self.logwrite(BOTH, "Initialize2 " + RET_OK)
 
+        self.busy = False
+
         return True
 
 
@@ -363,15 +397,19 @@ class DC(threading.Thread):
         if self.handle == 0:
             return False
 
+        self.busy = True
+
         # step 1. reset science data error counters
         if lib.MACIE_ResetErrorCounters(self.handle, self.slctMACIEs) != MACIE_OK:
             self.logwrite(BOTH, "Reset MACIE error counters " + RET_FAIL)
+            self.busy = False
             return False
         self.logwrite(BOTH, "Reset error counters " + RET_OK)
 
         # step 2. download ASIC file
         if lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_State, 0x8002, self.option) != MACIE_OK:
             self.logwrite(BOTH, "Reconfiguration sequence " + RET_FAIL)
+            self.busy = False
             return False
         self.logwrite(BOTH, "Reconfiguration sequence " + RET_OK)
 
@@ -380,6 +418,8 @@ class DC(threading.Thread):
         if ics == True:
             self.send_message(CMD_INITIALIZE2 + " OK")
 
+        self.busy = False
+
         return True
         
 
@@ -387,17 +427,21 @@ class DC(threading.Thread):
         if self.handle == 0:
             return False
 
+        self.busy = True
+
         # step 1. downlaod asic file
         file = self.loadfile_path + "/" + self.asic_file 
         sts = lib.MACIE_DownloadASICFile(self.handle, self.slctMACIEs, file.encode(), True)
         if sts != MACIE_OK:
             #self.logwrite(BOTH, "Download ASIC firmware " + RET_FAIL + ":" + self.GetErrMsg())
             self.logwrite(BOTH, self.GetErrMsg())
+            self.busy = False
             return False
         self.logwrite(BOTH, "Download ASIC firmware " + RET_OK)
 
         # step 2. GetAvailableASICs
         if self.GetAvailableASICs() == False:
+            self.busy = False
             return False
 
         self.logwrite(BOTH, "DownloadMCD " + RET_OK)
@@ -405,12 +449,16 @@ class DC(threading.Thread):
         if ics == True:
             self.send_message(CMD_DOWNLOAD + " OK")
 
+        self.busy = False
+
         return True
 
 
     def GetAvailableMACIEs(self):
         if self.handle == 0:
             return False
+
+        self.busy = True
 
         avaiMACIEs = lib.MACIE_GetAvailableMACIEs(self.handle)
         msg = "MACIE_GetAvailableMACIEs = %d" % avaiMACIEs
@@ -426,15 +474,19 @@ class DC(threading.Thread):
         if self.slctMACIEs == 0:
             msg = "Select MACIE = %d invalid" % avaiMACIEs
             self.logwrite(BOTH, msg)
+            self.busy = False
             return False
         elif lib.MACIE_ReadMACIEReg(self.handle, avaiMACIEs, MACIE_Reg, val) != MACIE_OK:
                 #msg = "MACIE read %d failed: %s" % (MACIE_Reg, self.GetErrMsg())
-                self.logwrite(BOTH, self.GetErrMsg())
-                return False
+            self.logwrite(BOTH, self.GetErrMsg())
+            self.busy = False
+            return False
         else:
             msg = "MACIE h%04x = %04x" % (MACIE_Reg, val[0])
             self.logwrite(BOTH, msg)
         
+        self.busy = False
+
         return True
 
 
@@ -442,9 +494,12 @@ class DC(threading.Thread):
         if self.handle == 0:
             return False
         
+        self.busy = True
+
         self.slctASICs = lib.MACIE_GetAvailableASICs(self.handle, False)
         if self.slctASICs == 0:
             self.logwrite(BOTH, "MACIE_GetAvailableASICs " + RET_FAIL)
+            self.busy = False
             return False
         else:           
             val, sts = self.read_ASIC_reg(ASICAddr)
@@ -462,12 +517,16 @@ class DC(threading.Thread):
         msg = "Available ASICs = %d" % self.slctASICs
         self.logwrite(BOTH, msg)
 
+        self.busy = False
+
         return True
 
 
     def SetDetector(self, muxType, outputs, ics):  # muxType = 2 (H2RG)
         if self.handle == 0:
             return False
+
+        self.busy = True
 
         res = [MACIE_OK, MACIE_OK]
 
@@ -477,6 +536,7 @@ class DC(threading.Thread):
         for i in range(2):
             if res[i] == MACIE_FAIL:
                 self.logwrite(BOTH, "Set Detector " + RET_FAIL)
+                self.busy = False
                 return False
 
         msg = "Set Detector (%d, %d) succeeded" % (muxType, outputs)
@@ -485,6 +545,8 @@ class DC(threading.Thread):
         if ics == True:
             self.send_message(CMD_SETDETECTOR + " OK")
 
+        self.busy = False
+
         return True
 
 
@@ -492,11 +554,14 @@ class DC(threading.Thread):
         if self.handle == 0:
             return
 
+        self.busy = True
+
         arr_list = [0 for _ in range(MACIE_ERROR_COUNTERS)]
         arr = np.array(arr_list)
         errArr = arr.ctypes.data_as(POINTER(c_ushort))
         if lib.MACIE_GetErrorCounters(self.handle, self.slctMACIEs, errArr) != MACIE_OK:
             self.logwrite(BOTH, "Read MACIE error counter failed")
+            self.busy = False
             return
 
         else:
@@ -510,6 +575,7 @@ class DC(threading.Thread):
         if self.handle == 0:
             return False
 
+        self.busy = True
         self.resets, self.reads, self.groups, self.ramps = p1, p2, p3, p5
 
         res = [0 for _ in range(8)]
@@ -535,6 +601,7 @@ class DC(threading.Thread):
         for i in range(8):
             if res[i] != MACIE_OK:
                 self.logwrite(BOTH, "SetRampParam failed - write ASIC registers")
+                self.busy = False
                 return False
 
         msg = "SetRampParam(%d, %d, %d, %d, %d)" % (p1, p2, p3, p4, p5)
@@ -542,6 +609,8 @@ class DC(threading.Thread):
 
         if ics == True:
             self.send_message(CMD_SETRAMPPARAM + " OK")
+
+        self.busy = False
 
         return True
 
@@ -553,6 +622,8 @@ class DC(threading.Thread):
 
         if self.handle == 0:
             return False
+
+        self.busy = True
 
         res = [0 for _ in range(9)]
 
@@ -587,6 +658,7 @@ class DC(threading.Thread):
         for i in range(9):
             if res[i] != MACIE_OK:
                 self.logwrite(BOTH, "SetFSParam failed - write ASIC registers")
+                self.busy = False
                 return False
 
         msg = "SetFSParam(%d, %d, %d, %f, %d)" % (p1, p2, p3, p4, p5)
@@ -595,6 +667,8 @@ class DC(threading.Thread):
         if ics == True:
             self.send_message(CMD_SETFSPARAM + " OK")
 
+        self.busy = False
+
         return True
 
 
@@ -602,6 +676,10 @@ class DC(threading.Thread):
 
         if self.handle == 0:
             return False
+
+        self.busy = True
+
+        self.measured_startT = ti.time()
 
         #self.loadimg = []
 
@@ -625,6 +703,7 @@ class DC(threading.Thread):
         for i in range(7):
             if res[i] != MACIE_OK:
                 self.logwrite(BOTH, "ASIC configuration failed - write ASIC registers")
+                self.busy = False
                 return False
 
         ti.sleep(1.5)
@@ -632,6 +711,7 @@ class DC(threading.Thread):
         val, sts = self.read_ASIC_reg(ASICAddr_State)
         if (val[0] & 1) != 0 or sts != MACIE_OK:
             self.logwrite(BOTH, "ASIC configuration for shorted preamp inputs failed")
+            self.busy = False
             return False
         self.logwrite(BOTH, "Configuration succeeded")
 
@@ -650,6 +730,7 @@ class DC(threading.Thread):
         if sts != MACIE_OK:
             msg = "Science interface configuration failed. buf = %d" % buf[0]
             self.logwrite(BOTH, msg)
+            self.busy = False
             return False
         msg = "Science interface configuration succeeded. buf (KB) = %d" % buf[0]
         self.logwrite(BOTH, msg)
@@ -663,18 +744,22 @@ class DC(threading.Thread):
         if sts != MACIE_OK:
             msg = "Read ASIC h%04x failed" % ASICAddr_State
             self.logwrite(BOTH, msg)
+            self.busy = False
             return False
         if (val[0] & 1) != 0:
             msg = "Configure idle mode by writing ASIC h%04x failed" % ASICAddr_State
             self.logwrite(BOTH, msg)
+            self.busy = False
             return False
 
         if lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_State, 0x8001, self.option) != MACIE_OK:
             self.logwrite(BOTH, "Triggering " + RET_FAIL)
+            self.busy = False
             return False
 
         self.logwrite(BOTH, "Triggering succeeded")
 
+        self.busy = False
         return True
 
 
@@ -682,7 +767,7 @@ class DC(threading.Thread):
         if self.handle == 0:
             return False
 
-        #self.loadimg = []
+        self.busy = True
 
         self.logwrite(BOTH, "Acquire Science Data....")
 
@@ -706,6 +791,7 @@ class DC(threading.Thread):
         for i in range(6):
             if res[i] != MACIE_OK:
                 self.logwrite(BOTH, "ASIC configuration failed - write ASIC registers")
+                self.busy = False
                 return False
 
         ti.sleep(1.5)
@@ -713,6 +799,7 @@ class DC(threading.Thread):
         val, sts = self.read_ASIC_reg(ASICAddr_State)
         if (val[0] & 1) != 0 or sts != MACIE_OK:
             self.logwrite(BOTH, "ASIC configuration for shorted preamp inputs failed")
+            self.busy = False
             return False
         self.logwrite(BOTH, "Configuration succeeded")
 
@@ -727,6 +814,7 @@ class DC(threading.Thread):
         if sts != MACIE_OK:
             msg = "Science interface configuration failed. buf = %d" % buf[0]
             self.logwrite(BOTH, msg)
+            self.busy = False
             return False
         msg = "Science interface configuration succeeded. buf (KB) = %d" % buf[0]
         self.logwrite(BOTH, msg)
@@ -740,10 +828,12 @@ class DC(threading.Thread):
         if sts != MACIE_OK:
             msg = "Read ASIC h%04x failed" % ASICAddr_State
             self.logwrite(BOTH, msg)
+            self.busy = False
             return False
         if (val[0] & 1) != 0:
             msg = "Configure idle mode by writing ASIC h%04x failed" % ASICAddr_State
             self.logwrite(BOTH, msg)
+            self.busy = False
             return False
 
         if lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_NReads, 15, self.option) != MACIE_OK:
@@ -752,10 +842,13 @@ class DC(threading.Thread):
 
         if lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_State, 0x8001, self.option) != MACIE_OK:
             self.logwrite(BOTH, "Triggering " + RET_FAIL)
+            self.busy = False
             return False
 
         self.logwrite(BOTH, "Triggering succeeded")
 
+        self.busy = False
+        
         return True
 
 
@@ -779,6 +872,8 @@ class DC(threading.Thread):
     def ImageAcquisition(self, ics):
         if self.handle == 0:
             return False
+
+        self.busy = True
 
         # Wait for available science data bytes
         idleReset, moreDelay = 1, 2000
@@ -814,6 +909,7 @@ class DC(threading.Thread):
 
         if byte <= 0:
             self.logwrite(BOTH, "Trigger timeout: no available science data")
+            self.busy = False
             return False
 
         #data = None
@@ -825,6 +921,7 @@ class DC(threading.Thread):
         print(data)
         if data == None:
             self.logwrite(BOTH, "Null frame")
+            self.busy = False
             return False
 
         frmcnt = 0
@@ -859,12 +956,16 @@ class DC(threading.Thread):
 
         self.logwrite(BOTH, "[TEST] " + CMD_ACQUIRERAMP + " OK")
 
+        self.busy = False
+
         return True
 
 
     def ImageAcquisition_window(self, ics):
         if self.handle == 0:
             return False
+
+        self.busy = True
 
         # Wait for available science data bytes
         idleReset, moreDelay = 1, 4000
@@ -891,6 +992,7 @@ class DC(threading.Thread):
 
         if byte <= 0:
             self.logwrite(BOTH, "Trigger timeout: no available science data")
+            self.busy = False
             return False
 
         #data = None
@@ -902,6 +1004,7 @@ class DC(threading.Thread):
 
         if data == None:
             self.logwrite(BOTH, "Null frame (ROI)")
+            self.busy = False
             return False
 
         print(data)
@@ -925,6 +1028,8 @@ class DC(threading.Thread):
                 print("Exit 2")
 
         self.logwrite(BOTH, "[TEST] " + CMD_ACQUIRERAMP + " OK")
+
+        self.busy = False
 
         return True
 
@@ -979,6 +1084,12 @@ class DC(threading.Thread):
                             self.logwrite(BOTH, filename)
 
                         idx += 1
+
+            if self.showfits and self.ramps == 1 and self.groups == 1 and self.reads == 1:
+                ds9 = WORKING_DIR + 'ds9'
+                subprocess.run([ds9, '-b', filename, '-o', 'newfile'], shell = True)
+
+            self.measured_durationT = ti.time() - self.measured_startT
             return
 
         elif self.samplingMode == CDS_MODE:  # ramp=1, group=1, read=1
@@ -1062,6 +1173,12 @@ class DC(threading.Thread):
         duration = ti.time() - startime
         tmp = "fowler calculation time: %.3f" % duration
         self.logwrite(BOTH, tmp)
+
+        if self.showfits:
+            ds9 = WORKING_DIR + 'ds9'
+            subprocess.run([ds9, '-b', lastfilename, '-o', 'newfile'], shell = True)
+        
+        self.measured_durationT = ti.time() - self.measured_startT
 
     
     def WriteFitsFile_window(self):

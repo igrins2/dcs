@@ -1,6 +1,8 @@
 from ctypes import *
 from DCS.DC_def import*
 
+import os
+
 MACIE_OK = 0
 MACIE_FAIL = 1
 
@@ -29,7 +31,10 @@ HDR_STR = 2
 #need to check!!!
 MACIE_ERROR_COUNTERS = 33
 
-lib = CDLL("/home/dcsh/macie_v5.2_centos/MacieApp/libMACIE.so")
+path = os.getcwd().split("/")
+libpath = "/" + path[1] + "/" + path[2]
+
+lib = CDLL(libpath + "/macie_v5.2_centos/MacieApp/libMACIE.so")
  
 #input, output parameters  
 lib.MACIE_LibVersion.restype = c_float  

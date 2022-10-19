@@ -61,6 +61,7 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.chk_autosave.setChecked(False)
 
         self.cur_cnt = 0
+        self.cur_prog_step = 0
 
         # RabbitMQ connect
         self.serv = ICS_SERVER(self.dc.ics_ip_addr, self.dc.ics_id, self.dc.ics_pwd, self.dc.ics_ex, self.dc.ics_q, "direct", self.dc.dcs_ex, self.dc.dcs_q)
@@ -318,31 +319,55 @@ class MainWindow(Ui_MainWindow, QMainWindow):
     # Buttons           
 
     def initialize1(self, ics=False):
+
+        if self.dc.busy:
+            return
+
         res = self.dc.Initialize(int(self.e_timeout.text()), ics)
         info = "%s (%d)" % (self.dc.LibVersion(), self.dc.macieSN)
         self.label_ver.setText(info)
-        if res == True:
-            self.btn_initialize1.setEnabled(False)
+        #if res == True:
+        #    self.btn_initialize1.setEnabled(False)
 
 
     def initialize2(self):
-        if self.dc.Initialize2() == True:
-            self.btn_initialize2.setEnabled(False)
+
+        if self.dc.busy:
+            return
+
+        #if self.dc.Initialize2() == True:
+        #    self.btn_initialize2.setEnabled(False)
 
 
     def reset(self, ics=False):
+
+        if self.dc.busy:
+            return
+
         self.dc.ResetASIC(ics)
 
 
     def downloadMCD(self, ics=False):
+
+        if self.dc.busy:
+            return
+
         self.dc.DownloadMCD(ics)
 
 
     def set_detector(self, ics=False):
+
+        if self.dc.busy:
+            return
+
         self.dc.SetDetector(MUX_TYPE, int(self.cmb_ouput_channels.currentText()), ics)
 
 
     def err_count(self):
+
+        if self.dc.busy:
+            return
+
         self.dc.GetErrorCounters()
 
 
@@ -474,6 +499,10 @@ class MainWindow(Ui_MainWindow, QMainWindow):
 
     # thread
     def acquireramp(self):
+
+        if self.dc.busy:
+            return
+
         if self.dc.ROIMode:
             self.dc.x_start = int(self.e_x_start.text())
             self.dc.x_stop = int(self.e_x_stop.text())
@@ -508,6 +537,34 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         else:
             self.dc.AcquireRamp()
             self.dc.ImageAcquisition(ics)
+
+        '''
+        self.cur_prog_step = 0
+        self.prog_sts.setValue(1000)
+        self.prog_sts.setAlignment(Qt.AlignCenter)
+        self.prog_sts.resetFormat()
+        '''
+    
+        timer = QTimer(self)
+        timer.singleShot(self.cal_waittime*10, self.show_progressbar)
+
+        self.cur_prog_step = 0
+        self.prog_sts.setValue(self.cur_prog_step)
+
+
+    def show_progressbar(self):
+        if self.cur_prog_step >= 100:
+            print("progress bar end!!!")
+            str_mea_time = "%.3f" % self.dc.measured_durationT
+            self.label_measured_time.setText(str_mea_time)
+            return
+        
+        self.cur_prog_step += 1
+        self.prog_sts.setValue(self.cur_prog_step)       
+        print(self.cur_prog_step)
+
+        timer = QTimer(self)
+        timer.singleShot(self.cal_waittime*10, self.show_progressbar)
       
 
 
@@ -516,7 +573,16 @@ class MainWindow(Ui_MainWindow, QMainWindow):
 
 
     def show_fits(self):
-        pass
+        self.dc.showfits = self.chk_show_fits.isChecked()
+        #print(self.dc.showfits)
+        #ds9 = WORKING_DIR + 'ds9'
+        #subprocess.run([ds9, '-b', "", '-o', 'newfile'], shell = True)
+
+        timer = QTimer(self)
+        timer.singleShot(self.cal_waittime*10, self.show_progressbar)
+
+        self.cur_prog_step = 0
+        self.prog_sts.setValue(self.cur_prog_step)
 
 
     def get_telemetry(self):

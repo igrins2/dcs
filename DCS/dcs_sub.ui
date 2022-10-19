@@ -139,6 +139,12 @@
    </property>
   </widget>
  </widget>
+ <tabstops>
+  <tabstop>e_user_dir</tabstop>
+  <tabstop>btn_find_user_dir</tabstop>
+  <tabstop>e_user_file</tabstop>
+  <tabstop>btn_save</tabstop>
+ </tabstops>
  <resources/>
  <connections/>
 </ui>
