@@ -11,6 +11,21 @@ Modified on Sep 16, 2022
 CLASS_NAME = "[Detector Control Core]"
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
+import os
+dir = os.getcwd().split("/")
+WORKING_DIR = "/" + dir[1] + "/" + dir[2] + "/"
+TITLE = "DCSS"
+TARGET = "SCP"
+if dir[2] == "dcsh":
+    TITLE = "DCSH"
+    TARGET = "DTP"
+elif dir[2] == "dcsk":
+    TITLE = "DCSK"
+    TARGET = "DTP"
+elif dir[2] == "dcss":
+    TITLE == "DCSS"
+    TARGET = "SCP"
+
 #FUN_OK = 1
 
 FITS_CNT = 50

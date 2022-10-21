@@ -11,7 +11,6 @@ Modified on Aug 28, 2022
 import subprocess
 import numpy as np
 import astropy.io.fits as fits
-from astropy.time import Time
 
 #from ctypes import *
 from math import *
@@ -23,25 +22,15 @@ import json
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 import Libs.SetConfig as sc
-from DCS.MACIE import *
-from DCS.DC_def import *
-from DCS.DC_server import *
+from MACIE import *
+from DC_def import *
+from DC_server import *
 from DC_gui_sub import *
 import tunning as tn
 
 import threading
 
-#for c++
-dir = os.getcwd().split("/")
-WORKING_DIR = "/" + dir[1] + "/" + dir[2] + "/"
-TITLE = ""
-if dir[2] == "dcsh":
-    TITLE = "DCSH"
-elif dir[2] == "dcsk":
-    TITLE = "DCSK"
-elif dir[2] == "dcss":
-    TITLE == "DCSS"
-
+# for c++
 lib2 = cdll.LoadLibrary(WORKING_DIR + "workspace/dcs/FowlerCalculation/libsampling_cal.so")
 fowler_calculation = lib2.fowler_calculation
 fowler_calculation.argtypes = (c_int, c_int, c_int, POINTER(c_ushort))
@@ -79,7 +68,7 @@ class DC(threading.Thread):
         self.ics_id = cfg.get('ICS', 'id')
         self.ics_pwd = cfg.get('ICS', 'pwd')
 
-        # DCS ?
+        # exchange - queue
         self.ics_ex = cfg.get(TITLE, 'ics_exchange')
         self.ics_q = cfg.get(TITLE, 'ics_routing_key')
 
@@ -141,20 +130,24 @@ class DC(threading.Thread):
         self.save_as = False    #for engineer
         self.showfits = False
 
-        # RabbitMQ connect
-        self.serv = ICS_SERVER(self.ics_ip_addr, self.ics_id, self.ics_pwd, self.ics_ex, self.ics_q, "direct", self.dcs_ex, self.dcs_q)
-        self.connection, self.channel = self.serv.connect_to_server()
-        
-        # RabbitMQ: define producer
-        self.serv.define_producer(self.channel)
+        self.connect_to_server()
 
 
     def run(self):
         print("Thread start", threading.current_thread().getName())
+
+
+    def connect_to_server(self):
+        # RabbitMQ connect
+        self.serv = ICS_SERVER(self.ics_ip_addr, self.ics_id, self.ics_pwd, self.ics_ex, self.ics_q, "direct", self.dcs_ex, self.dcs_q)
+        self.connection, self.channel = self.serv.connect_to_server(TITLE)
         
+        # RabbitMQ: define producer
+        self.serv.define_producer(self.channel, TITLE)
+
 
     def send_message(self, message):
-        self.serv.send_message(self.channel, message)
+        self.serv.send_message(self.channel, TITLE, TARGET, message)
 
 
     # Version

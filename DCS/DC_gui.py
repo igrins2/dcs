@@ -14,7 +14,7 @@ from PySide6.QtWidgets import *
 
 from ui_dcs import *
 from DC_core import *
-from DC_def import *
+#from DC_def import *
 from DC_server import *
 
 import threading
@@ -63,19 +63,8 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.cur_cnt = 0
         self.cur_prog_step = 0
 
-        # RabbitMQ connect
-        self.serv = ICS_SERVER(self.dc.ics_ip_addr, self.dc.ics_id, self.dc.ics_pwd, self.dc.ics_ex, self.dc.ics_q, "direct", self.dc.dcs_ex, self.dc.dcs_q)
-        self.connection, self.channel = self.serv.connect_to_server()
-
-        if self.connection:
-            # RabbitMQ: define consumer
-            self.queue = self.serv.define_consumer(self.channel)
-    
-            th = threading.Thread(target=self.consumer)
-            th.start()
-            #th.join()
-
-            self.show_alarm()
+        self.connect_to_server()
+        
 
     
     def closeEvent(self, event: QCloseEvent) -> None:
@@ -87,6 +76,22 @@ class MainWindow(Ui_MainWindow, QMainWindow):
             self.connection.close()
 
         return super().closeEvent(event)
+
+
+    def connect_to_server(self):
+        # RabbitMQ connect
+        self.serv = ICS_SERVER(self.dc.ics_ip_addr, self.dc.ics_id, self.dc.ics_pwd, self.dc.ics_ex, self.dc.ics_q, "direct", self.dc.dcs_ex, self.dc.dcs_q)
+        self.connection, self.channel = self.serv.connect_to_server(TITLE)
+
+        if self.connection:
+            # RabbitMQ: define consumer
+            self.queue = self.serv.define_consumer(self.channel, TITLE)
+    
+            th = threading.Thread(target=self.consumer)
+            th.start()
+            #th.join()
+
+            self.show_alarm()
 
 
     def set_samplingmode(self, mode):
@@ -238,6 +243,7 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         
         elif cmd == CMD_SETDETECTOR:
             self.set_detector(True)
+            #self.err_count() ??
         
         elif cmd.find(CMD_SETFSMODE) >= 0:
             param = cmd.split()

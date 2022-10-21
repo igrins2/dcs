@@ -3,7 +3,7 @@
 """
 Created on Sep 15, 2022
 
-Modified on , 2022
+Modified on Oct 21, 2022
 
 @author: hilee
 """
@@ -27,7 +27,7 @@ class ICS_SERVER():
         self.com_sts = False
 
     # RabbitMQ communication
-    def connect_to_server(self):
+    def connect_to_server(self, name):
         try:       
             id_pwd = pika.PlainCredentials(self.id, self.pwd)
             connection = pika.BlockingConnection(pika.ConnectionParameters(host=self.ip_addr, port=5672, credentials=id_pwd))
@@ -38,12 +38,12 @@ class ICS_SERVER():
             return connection, channel
             
         except:
-            print("DCS cannot connect to RabbitMQ server.\r\nPlease check the server and try again!")
+            print(name, "cannot connect to RabbitMQ server.\r\nPlease check the server and try again!")
             return None, None
 
 
     # as producer
-    def define_producer(self, channel):
+    def define_producer(self, channel, name):
         if self.com_sts == False:
             return False
 
@@ -52,12 +52,12 @@ class ICS_SERVER():
             return True
         
         except:
-            print("DCS cannot define producer.\r\nPlease check the server and try again!")
+            print(name, "cannot define producer.\r\nPlease check the server and try again!")
             return False
 
 
     # as consumer
-    def define_consumer(self, channel):
+    def define_consumer(self, channel, name):
         if self.com_sts == False:
             return None
 
@@ -69,17 +69,18 @@ class ICS_SERVER():
             return _queue
         
         except:
-            print("DCS cannot define consumer.\r\nPlease check the server and try again!")
+            print(name, "cannot define consumer.\r\nPlease check the server and try again!")
             return None
 
 
     # as producer
-    def send_message(self, channel, message):
+    def send_message(self, channel, producers, consumers, message):
         if self.com_sts == False:
             return
 
         channel.basic_publish(exchange=self.dcs_exchange, routing_key=self.dcs_routing_key, body=message.encode())
-        print('[dcs->ics] ' + message)
+        msg = '[%s->%s] %s' % (producers, consumers, message)
+        print(msg)
             
 
         
