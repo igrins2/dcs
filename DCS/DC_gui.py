@@ -63,6 +63,7 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.cur_cnt = 0
         self.cur_prog_step = 0
 
+        self.prog_sts.setValue(0)
         self.simulation_mode = False
 
         self.connect_to_server()
@@ -369,8 +370,8 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         res = self.dc.Initialize(int(self.e_timeout.text()), ics)
         info = "%s (%d)" % (self.dc.LibVersion(), self.dc.macieSN)
         self.label_ver.setText(info)
-        #if res == True:
-        #    self.btn_initialize1.setEnabled(False)
+        if res == True:
+            self.btn_initialize1.setEnabled(False)
 
 
     def initialize2(self):
@@ -378,8 +379,8 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         if self.dc.busy:
             return
 
-        #if self.dc.Initialize2() == True:
-        #    self.btn_initialize2.setEnabled(False)
+        if self.dc.Initialize2() == True:
+            self.btn_initialize2.setEnabled(False)
 
 
     def reset(self, ics=False):
@@ -574,6 +575,16 @@ class MainWindow(Ui_MainWindow, QMainWindow):
 
 
     def start_acquisition(self, ics=False):
+        self.label_measured_time.setText("0.0")
+
+        self.prog_timer = QTimer(self)
+        self.prog_timer.setInterval(self.cal_waittime*10)
+        self.prog_timer.timeout.connect(self.show_progressbar)
+
+        self.cur_prog_step = 0
+        self.prog_sts.setValue(self.cur_prog_step)
+        self.prog_timer.start()
+
         if self.dc.ROIMode:
             self.dc.AcquireRamp_window()
             self.dc.ImageAcquisition_window(ics)
@@ -588,30 +599,32 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.prog_sts.resetFormat()
         '''
     
-        timer = QTimer(self)
-        timer.singleShot(self.cal_waittime*10, self.show_progressbar)
-
-        self.cur_prog_step = 0
+        self.prog_timer.stop()
+        self.cur_prog_step = 100
         self.prog_sts.setValue(self.cur_prog_step)
+
+        str_mea_time = "%.3f" % self.dc.measured_durationT
+        self.label_measured_time.setText(str_mea_time)
 
 
     def show_progressbar(self):
         if self.cur_prog_step >= 100:
             print("progress bar end!!!")
-            str_mea_time = "%.3f" % self.dc.measured_durationT
-            self.label_measured_time.setText(str_mea_time)
+            #str_mea_time = "%.3f" % self.dc.measured_durationT
+            #self.label_measured_time.setText(str_mea_time)
             return
         
-        self.cur_prog_step += 1
+        self.cur_prog_step += self.cal_waittime * 2
         self.prog_sts.setValue(self.cur_prog_step)       
         print(self.cur_prog_step)
 
-        timer = QTimer(self)
-        timer.singleShot(self.cal_waittime*10, self.show_progressbar)
+        #timer = QTimer(self)
+        #timer.singleShot(self.cal_waittime*10, self.show_progressbar)
       
 
 
     def stop_acquistion(self, ics=False):
+        self.prog_timer.stop()
         self.dc.StopAcquisition(ics)
 
 

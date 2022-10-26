@@ -11,6 +11,7 @@ Modified on Aug 28, 2022
 import subprocess
 import numpy as np
 import astropy.io.fits as fits
+from astropy.time import Time
 
 #from ctypes import *
 from math import *
