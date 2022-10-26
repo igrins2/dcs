@@ -15,7 +15,7 @@ from PySide6.QtWidgets import *
 from ui_dcs import *
 from DC_core import *
 #from DC_def import *
-from DC_server import *
+#from DC_server import *
 
 import threading
 
@@ -62,6 +62,8 @@ class MainWindow(Ui_MainWindow, QMainWindow):
 
         self.cur_cnt = 0
         self.cur_prog_step = 0
+
+        self.simulation_mode = False
 
         self.connect_to_server()
         
@@ -227,29 +229,48 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         msg = "receive: %s" % cmd
         print(msg)
 
-        if cmd == "alive?":
+        param = cmd.split()
+        self.simulation_mode = bool(param[1])
+
+        if param[1] == "alive?":
+            param = cmd.split()
             self.ics_sts = True
-            self.dc.send_message("alive")     
+            self.dc.send_message("alive")               
         
-        elif cmd == CMD_INITIALIZE1:
+        elif param[1] == CMD_INITIALIZE1:            
             self.initialize1(True)
         
-        elif cmd == CMD_INITIALIZE2:
+        elif param[1] == CMD_INITIALIZE2:
+            if self.simulation_mode:
+                ti.sleep(1)
+                self.dc.send_message(CMD_INITIALIZE2 + " OK")
+                return
+
             self.initialize2()
             self.reset(True)
         
-        elif cmd == CMD_DOWNLOAD:
+        elif param[1] == CMD_DOWNLOAD:
+            if self.dc.simulation_mode:
+                ti.sleep(1)
+                self.dc.send_message(CMD_DOWNLOAD + " OK")
+                return
+
             self.downloadMCD(True)
         
-        elif cmd == CMD_SETDETECTOR:
+        elif param[1] == CMD_SETDETECTOR:
+            if self.dc.simulation_mode:
+                ti.sleep(1)
+                self.dc.send_message(CMD_SETDETECTOR + " OK")
+                return
+
             self.set_detector(True)
             #self.err_count() ??
         
-        elif cmd.find(CMD_SETFSMODE) >= 0:
+        elif param[1] == CMD_SETFSMODE:
             param = cmd.split()
             self.set_fsmode(int(param[1]))
 
-        elif cmd.find(CMD_SETWINPARAM) >= 0:
+        elif param[1] == CMD_SETWINPARAM:
             param = cmd.split()
 
             try:
@@ -264,24 +285,40 @@ class MainWindow(Ui_MainWindow, QMainWindow):
 
             self.set_ROImode()
         
-        elif cmd.find(CMD_SETRAMPPARAM) >= 0 or cmd.find(CMD_SETFSPARAM) >= 0:
+        elif param[1] == CMD_SETRAMPPARAM or param[1] == CMD_SETFSPARAM:
             param = cmd.split()
-            self.e_resets.setText(param[1])
-            self.e_reads.setText(param[2])
-            self.e_groups.setText(param[3])
-            self.e_drops.setText(param[4])
-            self.e_ramps.setText(param[5])
+            self.e_resets.setText(param[2])
+            self.e_reads.setText(param[3])
+            self.e_groups.setText(param[4])
+            self.e_drops.setText(param[5])
+            self.e_ramps.setText(param[6])
 
             if self.dc.samplingMode == UTR_MODE:
-                self.set_param_ui(int(param[1]), int(param[2]), int(param[3]), int(param[4]), int(param[5]))
+                self.set_param_ui(int(param[2]), int(param[3]), int(param[4]), int(param[5]), int(param[6]))
             else:
-                self.set_param_ui(int(param[1]), int(param[2]), int(param[3]), float(param[4]), int(param[5]))
+                self.set_param_ui(int(param[2]), int(param[3]), int(param[4]), float(param[5]), int(param[6]))
+
+            if self.simulation_mode:
+                ti.sleep(1)
+                self.dc.send_message(CMD_SETFSPARAM + " OK")
+                return
+
             self.set_parameter(True)
 
-        elif cmd == CMD_ACQUIRERAMP:
+        elif param[1] == CMD_ACQUIRERAMP:
+            if self.dc.simulation_mode:
+                ti.sleep(1)
+                self.dc.send_message(CMD_ACQUIRERAMP + " OK")
+                return
+
             self.start_acquisition(True)
 
-        elif cmd == CMD_STOPACQUISITION:
+        elif param[1] == CMD_STOPACQUISITION:
+            if self.dc.simulation_mode:
+                ti.sleep(1)
+                self.dc.send_message(CMD_STOPACQUISITION + " OK")
+                return
+
             self.stop_acquistion(True)
         
 
@@ -297,7 +334,7 @@ class MainWindow(Ui_MainWindow, QMainWindow):
 
         self.ics_sts = False
         timer = QTimer(self)
-        timer.singleShot(180*1000, self.show_alarm)  #after 180sec
+        timer.singleShot(self.dc.sts_update_interval*1000, self.show_alarm)  #after 180sec
 
 
     def set_fsmode(self, mode):

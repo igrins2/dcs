@@ -90,6 +90,7 @@ ASICAddr_PreAmpReg1Ch1ENAddr = 0x5100
 ASICAddr = 0x6100
 ASICAddr_State = 0x6900
 
+CMD_SIMULATION = "Simulation"
 CMD_INITIALIZE1 = "Initialize1"
 CMD_INITIALIZE2 = "Initialize2"
 CMD_DOWNLOAD = "DownloadMCD"

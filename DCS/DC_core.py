@@ -88,6 +88,8 @@ class DC(threading.Thread):
 
         self.gige_timeout = cfg.get('DC', 'timeout')
         self.output_channel = cfg.get('DC', 'channel')
+
+        self.sts_update_interval = int(cfg.get('DC', 'sts-update-interval'))
         #-------------------------------------------------------
 
         self.logwrite(BOTH, "start DCS!!!")
