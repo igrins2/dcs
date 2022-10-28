@@ -307,9 +307,6 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.e_drops.setText(str(drops))
         self.e_ramps.setText(str(ramps))
 
-        msg = "%s %d" % (CMD_SETFSMODE, self.samplingMode)
-        self.send_message(msg)
-
 
     def init_events(self):
         
@@ -519,6 +516,9 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         reads = int(self.e_reads.text())
         groups = int(self.e_groups.text())
         ramps = int(self.e_ramps.text())
+
+        msg = "%s %d" % (CMD_SETFSMODE, self.samplingMode)
+        self.send_message(msg)
 
         self.cal_waittime = 0.0
         if self.samplingMode == UTR_MODE:

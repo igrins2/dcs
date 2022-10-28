@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'dcsOLsJYa.ui'
+## Form generated from reading UI file 'dcsxxlIZw.ui'
 ##
 ## Created by: Qt User Interface Compiler version 6.3.0
 ##
@@ -309,7 +309,7 @@ class Ui_MainWindow(object):
         self.prog_sts.setValue(24)
         self.chk_show_fits = QCheckBox(self.groupBox_6)
         self.chk_show_fits.setObjectName(u"chk_show_fits")
-        self.chk_show_fits.setGeometry(QRect(450, 60, 91, 21))
+        self.chk_show_fits.setGeometry(QRect(450, 33, 91, 21))
         self.line = QFrame(self.centralwidget)
         self.line.setObjectName(u"line")
         self.line.setGeometry(QRect(590, 40, 21, 471))
@@ -483,6 +483,11 @@ class Ui_MainWindow(object):
         self.radio_fowler_number = QRadioButton(self.centralwidget)
         self.radio_fowler_number.setObjectName(u"radio_fowler_number")
         self.radio_fowler_number.setGeometry(QRect(170, 260, 21, 25))
+        self.label_cur_num = QLabel(self.centralwidget)
+        self.label_cur_num.setObjectName(u"label_cur_num")
+        self.label_cur_num.setGeometry(QRect(420, 410, 141, 21))
+        self.label_cur_num.setLayoutDirection(Qt.LeftToRight)
+        self.label_cur_num.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
         MainWindow.setCentralWidget(self.centralwidget)
         self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName(u"statusbar")
@@ -662,5 +667,6 @@ class Ui_MainWindow(object):
         self.label_recent_filename.setText(QCoreApplication.translate("MainWindow", u"file name", None))
         self.radio_exp_time.setText("")
         self.radio_fowler_number.setText("")
+        self.label_cur_num.setText(QCoreApplication.translate("MainWindow", u"1 / 1", None))
     # retranslateUi
 
