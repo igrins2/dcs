@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'dcszqhZMX.ui'
+## Form generated from reading UI file 'dcsOLsJYa.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.3.2
+## Created by: Qt User Interface Compiler version 6.3.0
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -36,10 +36,10 @@ class Ui_MainWindow(object):
         self.btn_error_cnt.setGeometry(QRect(460, 60, 91, 41))
         self.label_ver = QLabel(self.groupBox)
         self.label_ver.setObjectName(u"label_ver")
-        self.label_ver.setGeometry(QRect(90, 30, 81, 21))
+        self.label_ver.setGeometry(QRect(60, 30, 81, 21))
         self.e_timeout = QLineEdit(self.groupBox)
         self.e_timeout.setObjectName(u"e_timeout")
-        self.e_timeout.setGeometry(QRect(330, 30, 41, 23))
+        self.e_timeout.setGeometry(QRect(310, 30, 41, 23))
         self.e_timeout.setAlignment(Qt.AlignCenter)
         self.btn_reset = QPushButton(self.groupBox)
         self.btn_reset.setObjectName(u"btn_reset")
@@ -63,11 +63,11 @@ class Ui_MainWindow(object):
         self.label_4.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
         self.label = QLabel(self.groupBox)
         self.label.setObjectName(u"label")
-        self.label.setGeometry(QRect(40, 30, 41, 21))
+        self.label.setGeometry(QRect(10, 30, 41, 21))
         self.label.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
         self.label_3 = QLabel(self.groupBox)
         self.label_3.setObjectName(u"label_3")
-        self.label_3.setGeometry(QRect(170, 30, 151, 21))
+        self.label_3.setGeometry(QRect(150, 30, 151, 21))
         self.label_3.setLayoutDirection(Qt.LeftToRight)
         self.label_3.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
         self.btn_initialize2 = QPushButton(self.groupBox)
@@ -76,11 +76,6 @@ class Ui_MainWindow(object):
         self.btn_set_detector = QPushButton(self.groupBox)
         self.btn_set_detector.setObjectName(u"btn_set_detector")
         self.btn_set_detector.setGeometry(QRect(360, 60, 91, 41))
-        self.label_connection_sts = QLabel(self.groupBox)
-        self.label_connection_sts.setObjectName(u"label_connection_sts")
-        self.label_connection_sts.setGeometry(QRect(10, 30, 31, 21))
-        self.label_connection_sts.setLayoutDirection(Qt.LeftToRight)
-        self.label_connection_sts.setAlignment(Qt.AlignLeading|Qt.AlignLeft|Qt.AlignVCenter)
         self.groupBox_2 = QGroupBox(self.centralwidget)
         self.groupBox_2.setObjectName(u"groupBox_2")
         self.groupBox_2.setGeometry(QRect(620, 70, 491, 171))
@@ -312,18 +307,6 @@ class Ui_MainWindow(object):
         self.prog_sts.setObjectName(u"prog_sts")
         self.prog_sts.setGeometry(QRect(20, 90, 521, 23))
         self.prog_sts.setValue(24)
-        self.label_21 = QLabel(self.groupBox_6)
-        self.label_21.setObjectName(u"label_21")
-        self.label_21.setGeometry(QRect(290, 30, 191, 21))
-        self.label_21.setLayoutDirection(Qt.LeftToRight)
-        self.label_21.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
-        self.cmb_combine_line = QComboBox(self.groupBox_6)
-        self.cmb_combine_line.addItem("")
-        self.cmb_combine_line.addItem("")
-        self.cmb_combine_line.addItem("")
-        self.cmb_combine_line.setObjectName(u"cmb_combine_line")
-        self.cmb_combine_line.setGeometry(QRect(490, 30, 51, 23))
-        self.cmb_combine_line.setLayoutDirection(Qt.LeftToRight)
         self.chk_show_fits = QCheckBox(self.groupBox_6)
         self.chk_show_fits.setObjectName(u"chk_show_fits")
         self.chk_show_fits.setGeometry(QRect(450, 60, 91, 21))
@@ -533,8 +516,7 @@ class Ui_MainWindow(object):
         QWidget.setTabOrder(self.e_y_stop, self.e_repeat)
         QWidget.setTabOrder(self.e_repeat, self.btn_acquireramp)
         QWidget.setTabOrder(self.btn_acquireramp, self.btn_stop)
-        QWidget.setTabOrder(self.btn_stop, self.cmb_combine_line)
-        QWidget.setTabOrder(self.cmb_combine_line, self.chk_show_fits)
+        QWidget.setTabOrder(self.btn_stop, self.chk_show_fits)
         QWidget.setTabOrder(self.chk_show_fits, self.chk_autosave)
         QWidget.setTabOrder(self.chk_autosave, self.btn_get_telemetry)
         QWidget.setTabOrder(self.btn_get_telemetry, self.e_config_dir)
@@ -594,7 +576,6 @@ class Ui_MainWindow(object):
         self.label_3.setText(QCoreApplication.translate("MainWindow", u"SetGigeTimeout (ms):", None))
         self.btn_initialize2.setText(QCoreApplication.translate("MainWindow", u"Initialize2", None))
         self.btn_set_detector.setText(QCoreApplication.translate("MainWindow", u"SetDetector", None))
-        self.label_connection_sts.setText(QCoreApplication.translate("MainWindow", u"ICS", None))
         self.groupBox_2.setTitle(QCoreApplication.translate("MainWindow", u"Configuration Files", None))
         self.label_22.setText(QCoreApplication.translate("MainWindow", u"MACIE Register (mrf):", None))
         self.btn_find_MACIE_reg.setText(QCoreApplication.translate("MainWindow", u"...", None))
@@ -650,11 +631,6 @@ class Ui_MainWindow(object):
         self.label_measured_time.setText(QCoreApplication.translate("MainWindow", u"0.0", None))
         self.label_17.setText(QCoreApplication.translate("MainWindow", u"Measured waiting time (s):", None))
         self.label_calculated_time.setText(QCoreApplication.translate("MainWindow", u"0.0", None))
-        self.label_21.setText(QCoreApplication.translate("MainWindow", u"row-by-row combining Line:", None))
-        self.cmb_combine_line.setItemText(0, QCoreApplication.translate("MainWindow", u"5", None))
-        self.cmb_combine_line.setItemText(1, QCoreApplication.translate("MainWindow", u"7", None))
-        self.cmb_combine_line.setItemText(2, QCoreApplication.translate("MainWindow", u"9", None))
-
         self.chk_show_fits.setText(QCoreApplication.translate("MainWindow", u"Show FITS", None))
         self.label_2.setText(QCoreApplication.translate("MainWindow", u"Manual Mode", None))
         self.groupBox_9.setTitle(QCoreApplication.translate("MainWindow", u"Single Register Read - Write (ASIC)", None))

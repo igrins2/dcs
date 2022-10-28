@@ -8,54 +8,97 @@ Modified on Aug 28, 2022
 @author: hilee
 """
 
+import sys, os
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 from PySide6.QtWidgets import *
 
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
+
+import Libs.SetConfig as sc
+import Libs.rabbitmq_server as serv
+from Libs.logger import *
+
 from ui_dcs import *
-from DC_core import *
-#from DC_def import *
-#from DC_server import *
+from DC_def import *
 
 import threading
+import subprocess
+import time
 
 class MainWindow(Ui_MainWindow, QMainWindow):
 
     def __init__(self, autostart=False):
         super().__init__()
         self.setupUi(self)
-        self.setWindowTitle("Detector Control System 0.1")
+        self.setWindowTitle("Detector Control System 0.2")
 
-        self.dc = DC()
-        #self.dc.start()
+        self.log = LOG(WORKING_DIR + "DCS")
 
-        self.label_connection_sts.setText("ICS")
+        self.iam = "GUI"
+        self.target = "CORE"
 
-        # row-by-row combine fix!!! 9 line!
-        self.label_21.hide()
-        self.cmb_combine_line.hide()
+        self.logwrite(INFO, "start DCS gui!!!")        
 
+        #start core!!!
+        self.proc_core = subprocess.Popen(['python', WORKING_DIR + 'workspace/dcs/DCS/DC_core.py'])
+
+        #-------------------------------------------------------
+        # load ini file
+        cfg = sc.LoadConfig(WORKING_DIR + "DCS/DCS.ini")
+
+        # server id, pwd
+        self.myid = cfg.get(IAM, 'localhost_myid')
+        self.pwd = cfg.get(IAM, 'localhost_pwd')
+
+        # exchange - queue
+        self.gui_ex = cfg.get("DC", 'gui_exchange')
+        self.gui_q = cfg.get("DC", 'gui_routing_key')
+        self.core_ex = cfg.get("DC", 'core_exchange')
+        self.core_q = cfg.get("DC", 'core_routing_key')
+
+        self.loadfile_path = cfg.get('DC', 'config-dir')
+        self.loadfile_path = WORKING_DIR + self.loadfile_path
+
+        self.macie_file = cfg.get('DC', 'MACIE-Register')
+        self.asic_file = cfg.get('DC', 'ASIC-Firmware')
+
+        self.exe_path = cfg.get('DC', 'Img-dir')
+        self.exe_path = WORKING_DIR + self.exe_path
+
+        self.gige_timeout = cfg.get('DC', 'timeout')
+        self.output_channel = cfg.get('DC', 'channel')
+
+        #-------------------------------------------------------
+
+        self.init_events()
+
+        self.chk_ROI_mode.setEnabled(False)
+
+        self.e_x_start.setEnabled(False)
+        self.e_x_stop.setEnabled(False)
+        self.e_y_start.setEnabled(False)
+        self.e_y_stop.setEnabled(False)
+            
         #Load: cofiguration files
-        self.e_config_dir.setText(self.dc.loadfile_path)
-        self.e_MACIE_reg.setText(self.dc.macie_file)
-        self.e_ASIC_firmware.setText(self.dc.asic_file)
-        self.e_img_dir.setText(self.dc.exe_path)
+        self.e_config_dir.setText(self.loadfile_path)
+        self.e_MACIE_reg.setText(self.macie_file)
+        self.e_ASIC_firmware.setText(self.asic_file)
+        self.e_img_dir.setText(self.exe_path)
         
         #Load: version, SetGigeTimeout, Output Channel
-        self.label_ver.setText(self.dc.LibVersion())
-        self.e_timeout.setText(self.dc.gige_timeout)
-        self.cmb_ouput_channels.setCurrentText(self.dc.output_channel)
+        self.e_timeout.setText(self.gige_timeout)
+        self.cmb_ouput_channels.setCurrentText(self.output_channel)
 
-        self.ics_sts = False
+        self.samplingMode = UTR_MODE
 
-        self.set_samplingmode(self.dc.samplingMode)
         self.set_param_ui(1, 1, 1, 0, 1)
         self.e_exp_time.setText("1.63")
+        self.expTime = 1.63
+        self.cal_waittime = 0.0
 
         self.radio_exp_time.setChecked(True)
         self.radio_fowler_number.setChecked(False)
-
-        self.init_events()
 
         self.chk_autosave.setText("Save AS")
         self.chk_autosave.setChecked(False)
@@ -64,52 +107,163 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.cur_prog_step = 0
 
         self.prog_sts.setValue(0)
-        self.simulation_mode = False
 
-        self.connect_to_server()
-        
+        self.connect_to_server_ex()
+        self.connect_to_server_q()
+
+        self.busy = False
+       
 
     
     def closeEvent(self, event: QCloseEvent) -> None:
+        self.logwrite(INFO, "DCS gui closing...")
+
+        #need to test
+        #self.send_message(CMD_EXIT)
+
+        if self.proc_core != None:
+            self.proc_core.terminate()
+
         for th in threading.enumerate():
-            print(th.name + " exit.")
+            self.logwrite(INFO, th.name + " exit.")
 
         if self.queue:
-            self.channel.stop_consuming()
-            self.connection.close()
+            self.channel_q.stop_consuming()
+            self.connection_q.close()
+
+        self.logwrite(INFO, "DCS gui closed!")
 
         return super().closeEvent(event)
 
 
-    def connect_to_server(self):
+    def logwrite(self, level, message):
+        level_name = ""
+        if level == DEBUG:
+            level_name = "DEBUG"
+        elif level == INFO:
+            level_name = "INFO"
+        elif level == WARNING:
+            level_name = "WARNING"
+        elif level == ERROR:
+            level_name = "ERROR"
+        
+        msg = "[%s:%s] %s" % (self.iam, level_name, message)
+        self.log.send(level, msg)
+        
+
+
+    def connect_to_server_ex(self):
         # RabbitMQ connect
-        self.serv = ICS_SERVER(self.dc.ics_ip_addr, self.dc.ics_id, self.dc.ics_pwd, self.dc.ics_ex, self.dc.ics_q, "direct", self.dc.dcs_ex, self.dc.dcs_q)
-        self.connection, self.channel = self.serv.connect_to_server(TITLE)
+        self.connection_ex, self.channel_ex = serv.connect_to_server(self.iam, "localhost", self.myid, self.pwd)
 
-        if self.connection:
+        if self.connection_ex:
+            # RabbitMQ: define producer 
+            serv.define_producer(self.iam, self.channel_ex, "direct", self.gui_ex)
+
+
+    def send_message(self, message):
+        if self.connection_ex:
+            serv.send_message(self.iam, self.target, self.channel_ex, self.gui_ex, self.gui_q, message)
+
+            
+    def connect_to_server_q(self):
+        # RabbitMQ connect
+        self.connection_q, self.channel_q = serv.connect_to_server(self.iam, "localhost", self.myid, self.pwd)
+
+        if self.connection_q:
             # RabbitMQ: define consumer
-            self.queue = self.serv.define_consumer(self.channel, TITLE)
-    
+            self.queue = serv.define_consumer(self.iam, self.channel_q, "direct", self.core_ex, self.core_q)
+
             th = threading.Thread(target=self.consumer)
-            th.start()
-            #th.join()
-
-            self.show_alarm()
+            th.start() 
 
 
-    def set_samplingmode(self, mode):
-        if mode == UTR_MODE:
-            self.radio_UTR.setChecked(True)
-        elif mode == CDS_MODE:
-            self.radio_CDS.setChecked(True)
-        elif mode == CDSNOISE_MODE:
-            self.radio_CDSNoise.setChecked(True)
-        elif mode == FOWLER_MODE:
-            self.radio_Fowler.setChecked(True)
+    # RabbitMQ communication    
+    def consumer(self):
+        try:
+            self.channel_q.basic_consume(queue=self.queue, on_message_callback=self.callback, auto_ack=True)
+            self.channel_q.start_consuming()
+        except Exception as e:
+            if self.channel_q:
+                self.logwrite(ERROR, "The communication of server was disconnected!")
+            
+
+
+    def callback(self, ch, method, properties, body):
+        cmd = body.decode()
+        msg = "receive: %s" % cmd
+        self.logwrite(INFO, msg)
+
+        param = cmd.split()
+
+        self.busy = False
+
+        if param[0] == CMD_CORESTART:
+            self.send_message(CMD_VERSION)
+
+        elif param[0] == CMD_VERSION:
+            self.label_ver.setText(param[1])
+
+        elif param[0] == CMD_MEASURETIME:
+            str_mea_time = "%.3f" % self.measured_durationT
+            self.label_measured_time.setText(str_mea_time)
+
+        elif param[0] == CMD_INITIALIZE1:            
+            info = "%s (%d)" % (self.label_ver.Text(), param[1])
+            self.label_ver.setText(info)
+        
+        elif param[0] == CMD_INITIALIZE2:
+            pass
+        elif param[0] == CMD_RESET:
+            pass
+        elif param[0] == CMD_DOWNLOAD:
+            pass
+        elif param[0] == CMD_SETDETECTOR:
+            pass
+        elif param[0] == CMD_ERRCOUNT:
+            pass
+        elif param[0] == CMD_SETRAMPPARAM:
+            pass
+        elif param[0] == CMD_SETFSPARAM:
+            pass         
+
+        elif param[0] == CMD_ACQUIRERAMP:
+            self.prog_timer.stop()
+            self.cur_prog_step = 100
+            self.prog_sts.setValue(self.cur_prog_step)
+
+            show_cur_cnt = "%d / %s" % (self.cur_cnt, self.e_repeat.text())
+            if self.cur_cnt < int(self.e_repeat.text()):
+                self.acquireramp()
+            else:
+                self.cur_cnt = 0
+
+        elif param[0] == CMD_STOPACQUISITION:
+            pass
+
+        elif param[0] == CMD_WRITEASICREG:
+            pass
+
+        elif param[0] == CMD_READASICREG:
+            _text = str(hex(param[2]))[2:6]
+            if param[1] == self.e_addr_Vreset.text():
+                self.e_read_Vreset.setText(_text)
+            elif param[1] == self.e_addr_Dsub.text():
+                self.e_read_Dsub.setText(_text)
+            elif param[1] == self.e_addr_Vbiasgate.text():
+                self.e_read_Vbiasgate.setText(_text)
+            elif param[1] == self.e_addr_Vrefmain.text():
+                self.e_read_Vrefmain.setText(_text)
+            else:
+                self.e_read_input.setText(_text)
+
+        elif param[0] == CMD_GETTELEMETRY:
+            pass
+    
 
 
     def set_param_ui(self, resets, reads, groups, drops, ramps):
-        if self.dc.samplingMode == UTR_MODE:
+        if self.samplingMode == UTR_MODE:
             self.e_reads.setEnabled(True)
             self.e_groups.setEnabled(True)
             self.e_drops.setEnabled(True)
@@ -121,7 +275,6 @@ class MainWindow(Ui_MainWindow, QMainWindow):
             self.e_exp_time.setEnabled(False)
             self.e_fowler_number.setEnabled(False)
 
-            self.dc.drops = drops
             self.label_drops.setText("Drops")
 
         else:
@@ -130,12 +283,11 @@ class MainWindow(Ui_MainWindow, QMainWindow):
             self.e_drops.setEnabled(False)
             self.e_ramps.setEnabled(False)
             
-            self.dc.fowlerTime = drops
             self.label_drops.setText("T.Fowler")
 
             self.e_fowler_number.setText(str(reads))
 
-            if self.dc.samplingMode == FOWLER_MODE:
+            if self.samplingMode == FOWLER_MODE:
                 
                 self.e_exp_time.setEnabled(True)
                 self.e_fowler_number.setEnabled(False)
@@ -155,14 +307,13 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.e_drops.setText(str(drops))
         self.e_ramps.setText(str(ramps))
 
-        self.dc.resets = resets
-        self.dc.reads = reads
-        self.dc.groups = groups
-        self.dc.ramps = ramps
+        msg = "%s %d" % (CMD_SETFSMODE, self.samplingMode)
+        self.send_message(msg)
 
 
     def init_events(self):
         
+        self.cmb_ouput_channels.currentTextChanged.connect(self.change_channel)
         self.btn_initialize1.clicked.connect(self.initialize1)
         self.btn_initialize2.clicked.connect(self.initialize2)
         self.btn_reset.clicked.connect(self.reset)
@@ -213,225 +364,101 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.btn_read_input.clicked.connect(lambda: self.read_addr(self.e_addr_input.text()))
 
 
-    # RabbitMQ communication    
-    def consumer(self):
-        try:
-            self.channel.basic_consume(queue=self.queue,on_message_callback=self.callback, auto_ack=True)
-            self.channel.start_consuming()
-        except Exception as e:
-            if self.channel:
-                self.dc.logwrite(BOTH, "The communication of server was disconnected!")
-
-                #self.channel.stop_consuming()
-
-
-    def callback(self, ch, method, properties, body):
-        cmd = body.decode()
-        msg = "receive: %s" % cmd
-        print(msg)
-
-        param = cmd.split()
-        self.simulation_mode = bool(param[1])
-
-        if param[1] == "alive?":
-            param = cmd.split()
-            self.ics_sts = True
-            self.dc.send_message("alive")               
-        
-        elif param[1] == CMD_INITIALIZE1:            
-            self.initialize1(True)
-        
-        elif param[1] == CMD_INITIALIZE2:
-            if self.simulation_mode:
-                ti.sleep(1)
-                self.dc.send_message(CMD_INITIALIZE2 + " OK")
-                return
-
-            self.initialize2()
-            self.reset(True)
-        
-        elif param[1] == CMD_DOWNLOAD:
-            if self.dc.simulation_mode:
-                ti.sleep(1)
-                self.dc.send_message(CMD_DOWNLOAD + " OK")
-                return
-
-            self.downloadMCD(True)
-        
-        elif param[1] == CMD_SETDETECTOR:
-            if self.dc.simulation_mode:
-                ti.sleep(1)
-                self.dc.send_message(CMD_SETDETECTOR + " OK")
-                return
-
-            self.set_detector(True)
-            #self.err_count() ??
-        
-        elif param[1] == CMD_SETFSMODE:
-            param = cmd.split()
-            self.set_fsmode(int(param[1]))
-
-        elif param[1] == CMD_SETWINPARAM:
-            param = cmd.split()
-
-            try:
-                self.chk_ROI_mode.setChecked(True)
-
-                self.e_x_start.setText(param[1])
-                self.e_x_stop.setText(param[2])
-                self.e_y_start.setText(param[3])
-                self.e_y_stop.setText(param[4])
-            except:
-                self.chk_ROI_mode.setChecked(False)
-
-            self.set_ROImode()
-        
-        elif param[1] == CMD_SETRAMPPARAM or param[1] == CMD_SETFSPARAM:
-            param = cmd.split()
-            self.e_resets.setText(param[2])
-            self.e_reads.setText(param[3])
-            self.e_groups.setText(param[4])
-            self.e_drops.setText(param[5])
-            self.e_ramps.setText(param[6])
-
-            if self.dc.samplingMode == UTR_MODE:
-                self.set_param_ui(int(param[2]), int(param[3]), int(param[4]), int(param[5]), int(param[6]))
-            else:
-                self.set_param_ui(int(param[2]), int(param[3]), int(param[4]), float(param[5]), int(param[6]))
-
-            if self.simulation_mode:
-                ti.sleep(1)
-                self.dc.send_message(CMD_SETFSPARAM + " OK")
-                return
-
-            self.set_parameter(True)
-
-        elif param[1] == CMD_ACQUIRERAMP:
-            if self.dc.simulation_mode:
-                ti.sleep(1)
-                self.dc.send_message(CMD_ACQUIRERAMP + " OK")
-                return
-
-            self.start_acquisition(True)
-
-        elif param[1] == CMD_STOPACQUISITION:
-            if self.dc.simulation_mode:
-                ti.sleep(1)
-                self.dc.send_message(CMD_STOPACQUISITION + " OK")
-                return
-
-            self.stop_acquistion(True)
-        
-
-    def show_alarm(self):
-        textcolor = "black"
-        if self.ics_sts == True:
-            textcolor = "green"
-        else:
-            textcolor = "red"
-        
-        label = "QLabel {color:%s}" % textcolor
-        self.label_connection_sts.setStyleSheet(label)
-
-        self.ics_sts = False
-        timer = QTimer(self)
-        timer.singleShot(self.dc.sts_update_interval*1000, self.show_alarm)  #after 180sec
-
-
-    def set_fsmode(self, mode):
-        sts = [False for _ in range(4)]
-
-        if mode == UTR_MODE:
-            sts = [True, False, False, False]
-        elif mode == CDS_MODE:
-            sts = [False, True, False, False]
-        elif mode == CDSNOISE_MODE:
-            sts = [False, False, True, False]
-        elif mode == FOWLER_MODE:
-            sts = [False, False, False, True]
-
-        self.radio_UTR.setChecked(sts[0])
-        self.radio_CDS.setChecked(sts[1])
-        self.radio_CDSNoise.setChecked(sts[2])
-        self.radio_Fowler.setChecked(sts[3])
-        self.dc.samplingMode = mode
-
-        self.dc.send_message(CMD_SETFSMODE + " OK")
-
-
     # ----------------------------------------------------------------------
     # Buttons           
 
-    def initialize1(self, ics=False):
+    def change_channel(self):
+        if self.cmb_ouput_channels.currentText() == "1":
+            self.chk_ROI_mode.setEnabled(True)
 
-        if self.dc.busy:
+            if self.chk_ROI_mode.isChecked():
+                self.e_x_start.setEnabled(True)
+                self.e_x_stop.setEnabled(True)
+                self.e_y_start.setEnabled(True)
+                self.e_y_stop.setEnabled(True)
+        else:
+            self.chk_ROI_mode.setEnabled(False)
+
+            self.e_x_start.setEnabled(False)
+            self.e_x_stop.setEnabled(False)
+            self.e_y_start.setEnabled(False)
+            self.e_y_stop.setEnabled(False)
+            
+            
+
+    def initialize1(self):
+
+        if self.busy:
             return
+        self.busy = True
 
-        res = self.dc.Initialize(int(self.e_timeout.text()), ics)
-        info = "%s (%d)" % (self.dc.LibVersion(), self.dc.macieSN)
-        self.label_ver.setText(info)
-        if res == True:
-            self.btn_initialize1.setEnabled(False)
+        msg = "%s %s" % (CMD_INITIALIZE1, self.e_timeout.text())
+        self.send_message(msg)
 
 
     def initialize2(self):
 
-        if self.dc.busy:
+        if self.busy:
             return
+        self.busy = True
 
-        if self.dc.Initialize2() == True:
-            self.btn_initialize2.setEnabled(False)
+        self.send_message(CMD_INITIALIZE2)
 
 
-    def reset(self, ics=False):
+    def reset(self):
 
-        if self.dc.busy:
+        if self.busy:
             return
+        self.busy = True
 
-        self.dc.ResetASIC(ics)
+        self.send_message(CMD_RESET)
 
 
-    def downloadMCD(self, ics=False):
+    def downloadMCD(self):
 
-        if self.dc.busy:
+        if self.busy:
             return
+        self.busy = True
 
-        self.dc.DownloadMCD(ics)
+        self.send_message(CMD_DOWNLOAD)
 
 
-    def set_detector(self, ics=False):
+    def set_detector(self):
 
-        if self.dc.busy:
+        if self.busy:
             return
+        self.busy = True
 
-        self.dc.SetDetector(MUX_TYPE, int(self.cmb_ouput_channels.currentText()), ics)
+        msg = "%s %d %s" % (CMD_SETDETECTOR, MUX_TYPE, self.cmb_ouput_channels.currentText())
+        self.send_message(msg)
 
 
     def err_count(self):
 
-        if self.dc.busy:
+        if self.busy:
             return
+        self.busy = True
 
-        self.dc.GetErrorCounters()
+        self.send_message(CMD_ERRCOUNT)
 
 
     def click_UTR(self):
-        self.dc.samplingMode = UTR_MODE
+        self.samplingMode = UTR_MODE
         self.set_param_ui(1, 1, 1, 0, 1)
 
 
     def click_CDS(self):
-        self.dc.samplingMode = CDS_MODE
+        self.samplingMode = CDS_MODE
         self.set_param_ui(1, 1, 1, T_minFowler, 1)
 
 
     def click_CDSNoise(self):
-        self.dc.samplingMode = CDSNOISE_MODE
+        self.samplingMode = CDSNOISE_MODE
         self.set_param_ui(1, 1, 1, T_minFowler, 2)
 
 
     def click_Fowler(self):
-        self.dc.samplingMode = FOWLER_MODE
+        self.samplingMode = FOWLER_MODE
         self.set_param_ui(1, 1, 1, T_minFowler, 1)
 
 
@@ -453,82 +480,85 @@ class MainWindow(Ui_MainWindow, QMainWindow):
 
     def judge_param(self):
         # calculation fowler number & exp time
-        self.dc.expTime = float(self.e_exp_time.text())
+        self.expTime = float(self.e_exp_time.text())
         _fowler_num = int(self.e_fowler_number.text())
 
         _fowler_time = float(self.e_drops.text())
 
         if self.radio_exp_time.isChecked():
-            _max_fowler_number = int((self.dc.expTime - T_minFowler) / T_frame)
+            _max_fowler_number = int((self.expTime - T_minFowler) / T_frame)
             if _fowler_num > _max_fowler_number:
                 #dialog box
-                print("please change 'exposure time'!")
+                self.logwrite(WARNING, "please change 'exposure time'!")
                 return False
 
         elif self.radio_fowler_number.isChecked():
-            _fowler_time = self.dc.expTime - T_frame * _fowler_num
+            _fowler_time = self.expTime - T_frame * _fowler_num
             if _fowler_time < T_minFowler:
                 #dialog box
-                print("please change 'fowler sampling number'!")
+                self.logwrite(WARNING, "please change 'fowler sampling number'!")
                 return False            
 
         else:
-            print("Please select 'Exp. Time' or 'N. Fowler' for judgement!")
+            self.logwrite(WARNING, "Please select 'Exp. Time' or 'N. Fowler' for judgement!")
             return False
 
         return True
         
 
-    def set_parameter(self, ics=False):
+    def set_parameter(self):
 
-        if self.dc.samplingMode == FOWLER_MODE and self.judge_param() == False:
+        if self.busy:
+            return
+        self.busy = True
+
+        if self.samplingMode == FOWLER_MODE and self.judge_param() == False:
             return
 
-        self.dc.resets = int(self.e_resets.text())
-        self.dc.reads = int(self.e_reads.text())
-        self.dc.groups = int(self.e_groups.text())
-        self.dc.ramps = int(self.e_ramps.text())
+        resets = int(self.e_resets.text())
+        reads = int(self.e_reads.text())
+        groups = int(self.e_groups.text())
+        ramps = int(self.e_ramps.text())
 
         self.cal_waittime = 0.0
-        if self.dc.samplingMode == UTR_MODE:
-            self.dc.drops = int(self.e_drops.text())
+        if self.samplingMode == UTR_MODE:
+            drops = int(self.e_drops.text())
 
-            self.dc.expTime = (T_frame * self.dc.reads * self.dc.groups) + (T_frame * self.dc.drops * (self.dc.groups -1 ))
-            self.cal_waittime = T_br + ((T_frame * self.dc.resets) + self.dc.expTime) * self.dc.ramps
+            self.expTime = (T_frame * reads * groups) + (T_frame * drops * (groups -1 ))
+            self.cal_waittime = T_br + ((T_frame * resets) + self.expTime) * ramps
             
-            self.dc.SetRampParam(self.dc.resets, self.dc.reads, self.dc.groups, self.dc.drops, self.dc.ramps, ics)   
+            msg = "%s %d %d %d %d %d" % (CMD_SETRAMPPARAM, resets, reads, groups, drops, ramps)
+            self.send_message(msg)
 
-            str_exp_time = "%.3f" % self.dc.expTime
+            str_exp_time = "%.3f" % self.expTime
             self.e_exp_time.setText(str_exp_time)     
 
         else:
-            #self.dc.fowlerTime = float(self.e_drops.text())
-            #exptime = self.dc.fowlerTime + T_frame * self.dc.reads
-
-            self.dc.expTime = float(self.e_exp_time.text())
-            if self.dc.samplingMode == FOWLER_MODE:
+            self.expTime = float(self.e_exp_time.text())
+            if self.samplingMode == FOWLER_MODE:
                 #if self.radio_fowler_number.isChecked():
                 self.e_reads.setText(self.e_fowler_number.text())
-                self.dc.reads = int(self.e_reads.text())
+                reads = int(self.e_reads.text())
                 if self.radio_fowler_number.isChecked():
                     self.e_reads.setText(self.e_fowler_number.text())
-                    self.dc.reads = int(self.e_reads.text())
+                    reads = int(self.e_reads.text())
 
-                self.dc.fowlerTime = self.dc.expTime - T_frame * self.dc.reads
-                str_fowlerTime = "%.3f" % self.dc.fowlerTime
+                fowlerTime = self.expTime - T_frame * reads
+                str_fowlerTime = "%.3f" % fowlerTime
                 
                 self.e_drops.setText(str_fowlerTime)
             
             else:
-                self.dc.expTime = self.dc.fowlerTime + T_frame * self.dc.reads
+                self.expTime = fowlerTime + T_frame * reads
 
-                str_exp_time = "%.3f" % self.dc.expTime
+                str_exp_time = "%.3f" % self.expTime
                 self.e_exp_time.setText(str_exp_time)
 
             self.e_reads.setText(self.e_fowler_number.text())
-            self.cal_waittime = T_br + ((T_frame * self.dc.resets) + self.dc.fowlerTime + (2 * T_frame * self.dc.reads)) * self.dc.ramps
-            
-            self.dc.SetFSParam(self.dc.resets, self.dc.reads, self.dc.groups, self.dc.fowlerTime, self.dc.ramps, ics)
+            self.cal_waittime = T_br + ((T_frame * resets) + fowlerTime + (2 * T_frame * reads)) * ramps
+  
+            msg = "%s %d %d %d %.3f %d" % (CMD_SETFSPARAM, resets, reads, groups, fowlerTime, ramps)
+            self.send_message(msg)
         
         str_caltime = "%.3f" % self.cal_waittime
         self.label_calculated_time.setText(str_caltime)
@@ -536,45 +566,37 @@ class MainWindow(Ui_MainWindow, QMainWindow):
 
     def set_ROImode(self):
         if self.chk_ROI_mode.isChecked():
-            self.dc.ROIMode = True
+            self.e_x_start.setEnabled(True)
+            self.e_x_stop.setEnabled(True)
+            self.e_y_start.setEnabled(True)
+            self.e_y_stop.setEnabled(True)
         else:
-            self.dc.ROIMode = False
+            self.e_x_start.setEnabled(False)
+            self.e_x_stop.setEnabled(False)
+            self.e_y_start.setEnabled(False)
+            self.e_y_stop.setEnabled(False)
        
 
     # thread
     def acquireramp(self):
 
-        if self.dc.busy:
+        if self.busy:
             return
+        self.busy = True
 
-        if self.dc.ROIMode:
-            self.dc.x_start = int(self.e_x_start.text())
-            self.dc.x_stop = int(self.e_x_stop.text())
-            self.dc.y_start = int(self.e_y_start.text())
-            self.dc.y_stop = int(self.e_y_stop.text())
+        if self.chk_ROI_mode.isChecked():
+            self.x_start = int(self.e_x_start.text())
+            self.x_stop = int(self.e_x_stop.text())
+            self.y_start = int(self.e_y_start.text())
+            self.y_stop = int(self.e_y_stop.text())
+            msg = "%s %d %d %d %d" % (CMD_SETWINPARAM, self.x_start, self.x_stop, self.y_start, self.y_stop)
+            self.send_message(msg)
 
-        self.dc.logwrite(BOTH, "[TEST] " + CMD_ACQUIRERAMP + " Start")
-
-        self.dc.save_as = self.chk_autosave.isChecked()
+        msg = "%s %d" % (CMD_SAVEAS, self.chk_autosave.isChecked())
+        self.send_message(msg)
         
         self.cur_cnt += 1
 
-        self.start_acquisition()
-        
-        show_cur_cnt = "%d / %s" % (self.cur_cnt, self.e_repeat.text())
-        self.dc.logwrite(BOTH, "[TEST] " + show_cur_cnt)
-        if self.cur_cnt < int(self.e_repeat.text()):
-            timer = QTimer(self)
-            #timer.singleShot(self.cal_waittime + 0.1, self.acquireramp)
-            timer.singleShot(0.1, self.acquireramp)
-        else:
-            self.cur_cnt = 0
-        #th = threading.Thread(target=self.acquireramp_sub)
-        #th.start()
-        #th.join()
-
-
-    def start_acquisition(self, ics=False):
         self.label_measured_time.setText("0.0")
 
         self.prog_timer = QTimer(self)
@@ -584,65 +606,43 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.cur_prog_step = 0
         self.prog_sts.setValue(self.cur_prog_step)
         self.prog_timer.start()
-
-        if self.dc.ROIMode:
-            self.dc.AcquireRamp_window()
-            self.dc.ImageAcquisition_window(ics)
-        else:
-            self.dc.AcquireRamp()
-            self.dc.ImageAcquisition(ics)
-
-        '''
-        self.cur_prog_step = 0
-        self.prog_sts.setValue(1000)
-        self.prog_sts.setAlignment(Qt.AlignCenter)
-        self.prog_sts.resetFormat()
-        '''
-    
-        self.prog_timer.stop()
-        self.cur_prog_step = 100
-        self.prog_sts.setValue(self.cur_prog_step)
-
-        str_mea_time = "%.3f" % self.dc.measured_durationT
-        self.label_measured_time.setText(str_mea_time)
+        
+        msg = "%s %d" % (CMD_ACQUIRERAMP, self.chk_ROI_mode.isChecked())
+        self.send_message(msg)  
 
 
     def show_progressbar(self):
         if self.cur_prog_step >= 100:
-            print("progress bar end!!!")
-            #str_mea_time = "%.3f" % self.dc.measured_durationT
-            #self.label_measured_time.setText(str_mea_time)
+            self.logwrite(INFO, "progress bar end!!!")
             return
         
         self.cur_prog_step += self.cal_waittime * 2
         self.prog_sts.setValue(self.cur_prog_step)       
-        print(self.cur_prog_step)
-
-        #timer = QTimer(self)
-        #timer.singleShot(self.cal_waittime*10, self.show_progressbar)
-      
+        self.logwrite(INFO, self.cur_prog_step)
 
 
-    def stop_acquistion(self, ics=False):
+
+    def stop_acquistion(self):
+        if self.cur_prog_step == 0:
+            return
+
         self.prog_timer.stop()
-        self.dc.StopAcquisition(ics)
+        
+        self.send_message(CMD_STOPACQUISITION)
 
 
     def show_fits(self):
-        self.dc.showfits = self.chk_show_fits.isChecked()
-        #print(self.dc.showfits)
-        #ds9 = WORKING_DIR + 'ds9'
-        #subprocess.run([ds9, '-b', "", '-o', 'newfile'], shell = True)
-
-        timer = QTimer(self)
-        timer.singleShot(self.cal_waittime*10, self.show_progressbar)
-
-        self.cur_prog_step = 0
-        self.prog_sts.setValue(self.cur_prog_step)
+        msg = "%s %d" % (CMD_SHOWFITS, self.chk_show_fits.isChecked())
+        self.send_message(CMD_SHOWFITS)
 
 
     def get_telemetry(self):
-        self.dc.GetTelemetry()
+
+        if self.busy:
+            return
+        self.busy = True
+
+        self.send_message(CMD_GETTELEMETRY)
 
 
     def find_dir(self, find_option):
@@ -673,8 +673,9 @@ class MainWindow(Ui_MainWindow, QMainWindow):
 
     
     def write_addr(self, addr, value):
-        if self.dc.handle == 0:
+        if self.busy:
             return
+        self.busy = True
 
         if value == "":
             return 
@@ -682,48 +683,19 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         _addr = int("0x" + addr, 16)
         _value = int("0x" + value, 16)
 
-        res = self.dc.write_ASIC_reg(_addr, _value)
-        if res == MACIE_OK:
-            result = RET_OK
-        else:
-            result = RET_FAIL
-        msg = "WriteASICReg %s - h%04x = %04x" % (result, _addr, _value)
-        self.dc.logwrite(BOTH, msg)
-
-
-    def read_addr(self, addr):
-        if self.dc.handle == 0:
-            return
+        msg = "%s %d %d" % (CMD_WRITEASICREG, _addr, _value)
+        self.send_message(msg)
         
+
+
+    def read_addr(self, addr):        
         if addr == "":
             return
 
         _addr = int("0x" + addr, 16)
 
-        val, sts = self.dc.read_ASIC_reg(_addr)
-        if sts == MACIE_OK:
-            result = RET_OK
-            _value = val[0]
-        else:
-            result = RET_FAIL
-            _value = 0
-
-        msg = "ReadASICReg %s - h%04x = %04x" % (result, _addr, _value)     #need to check
-        self.dc.logwrite(BOTH, msg)
-
-        _text = str(hex(_value))[2:6]
-        if addr == self.e_addr_Vreset.text():
-            self.e_read_Vreset.setText(_text)
-        elif addr == self.e_addr_Dsub.text():
-            self.e_read_Dsub.setText(_text)
-        elif addr == self.e_addr_Vbiasgate.text():
-            self.e_read_Vbiasgate.setText(_text)
-        elif addr == self.e_addr_Vrefmain.text():
-            self.e_read_Vrefmain.setText(_text)
-            self.dc.V_refmain = hex(_value)
-        else:
-            self.e_read_input.setText(_text)
-
+        msg = "%s %d" % (CMD_READASICREG, _addr)
+        self.send_message(msg)
 
         
 if __name__ == "__main__":

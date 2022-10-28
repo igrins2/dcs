@@ -14,16 +14,16 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 import os
 dir = os.getcwd().split("/")
 WORKING_DIR = "/" + dir[1] + "/" + dir[2] + "/"
-TITLE = "DCSS"
+IAM = "DCSS"
 TARGET = "SCP"
 if dir[2] == "dcsh":
-    TITLE = "DCSH"
+    IAM = "DCSH"
     TARGET = "DTP"
 elif dir[2] == "dcsk":
-    TITLE = "DCSK"
+    IAM = "DCSK"
     TARGET = "DTP"
 elif dir[2] == "dcss":
-    TITLE == "DCSS"
+    IAM == "DCSS"
     TARGET = "SCP"
 
 #FUN_OK = 1
@@ -35,9 +35,10 @@ RET_OK = "succeeded"
 RET_FAIL = "failed"
 
 # LOG option
-LOGGING = 1
-CMDLINE = 2
-BOTH = 3
+DEBUG = 0
+INFO = 1
+WARNING = 2
+ERROR = 3
 
 MUX_TYPE = 2
 
@@ -90,17 +91,29 @@ ASICAddr_PreAmpReg1Ch1ENAddr = 0x5100
 ASICAddr = 0x6100
 ASICAddr_State = 0x6900
 
+CMD_CORESTART = "CoreStart"
 CMD_SIMULATION = "Simulation"
+CMD_VERSION = "LibVersion"
+CMD_SHOWFITS = "ShowFits"
+CMD_SAVEAS = "SaveAs"
+CMD_MEASURETIME = "MeasuredDurationT"
+CMD_EXIT = "Exit"
+
 CMD_INITIALIZE1 = "Initialize1"
 CMD_INITIALIZE2 = "Initialize2"
+CMD_RESET = "ResetASIC"
 CMD_DOWNLOAD = "DownloadMCD"
 CMD_SETDETECTOR = "SetDetector"
+CMD_ERRCOUNT = "GetErrorCounters"
 CMD_SETFSMODE = "SETFSMODE"
 CMD_SETWINPARAM = "SetWinParam"
 CMD_SETRAMPPARAM = "SetRampParam"
 CMD_SETFSPARAM = "SetFSParam"
 CMD_ACQUIRERAMP = "ACQUIRERAMP"
 CMD_STOPACQUISITION = "STOPACQUISITION"
+CMD_WRITEASICREG = "writeASICreg"
+CMD_READASICREG = "readASICreg"
+CMD_GETTELEMETRY = "GetTelemetry"
 
 
 
