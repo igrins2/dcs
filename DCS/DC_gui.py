@@ -634,11 +634,11 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         #ds9 = WORKING_DIR + 'ds9'
         #subprocess.run([ds9, '-b', "", '-o', 'newfile'], shell = True)
 
-        timer = QTimer(self)
-        timer.singleShot(self.cal_waittime*10, self.show_progressbar)
+        #timer = QTimer(self)
+        #timer.singleShot(self.cal_waittime*10, self.show_progressbar)
 
-        self.cur_prog_step = 0
-        self.prog_sts.setValue(self.cur_prog_step)
+        #self.cur_prog_step = 0
+        #self.prog_sts.setValue(self.cur_prog_step)
 
 
     def get_telemetry(self):

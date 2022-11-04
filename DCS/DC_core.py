@@ -882,13 +882,13 @@ class DC(threading.Thread):
         if self.samplingMode == UTR_MODE:
             getByte = FRAME_X * FRAME_Y * 2 * self.reads * self.groups * self.ramps
             # 1000 -> 10000: increse wating time for long exposure
-            triggerTimeout = triggerTimeout + ((T_frame * self.resets) + T_frame * self.drops * self.groups) * self.ramps * 10000
+            triggerTimeout = triggerTimeout + ((T_frame * self.resets) + T_frame * self.drops * self.groups) * self.ramps * 100000
 
             print("triggerTimeout 2:", triggerTimeout)
 
         else:
             getByte = FRAME_X * FRAME_Y * 2 * 2 * self.reads * self.ramps
-            triggerTimeout = triggerTimeout + ((T_frame * self.resets) + self.fowlerTime + (2 * T_frame * self.reads)) * self.ramps * 1000
+            triggerTimeout = triggerTimeout + ((T_frame * self.resets) + self.fowlerTime + (2 * T_frame * self.reads)) * self.ramps * 100000
             
             print("triggerTimeout 2:", self.fowlerTime, triggerTimeout)
 
@@ -1082,8 +1082,9 @@ class DC(threading.Thread):
                         idx += 1
 
             if self.showfits and self.ramps == 1 and self.groups == 1 and self.reads == 1:
-                ds9 = WORKING_DIR + 'ds9'
-                subprocess.run([ds9, '-b', filename, '-o', 'newfile'], shell = True)
+                ds9 = WORKING_DIR + 'macie_v5.2_centos/MacieApp/ds9'
+                #subprocess.run([ds9, '-b', filename, '-o', 'newfile'], shell = True)
+                subprocess.run([ds9, filename], shell = True)
 
             self.measured_durationT = ti.time() - self.measured_startT
             return
