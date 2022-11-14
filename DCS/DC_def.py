@@ -14,8 +14,8 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 import os
 dir = os.getcwd().split("/")
 WORKING_DIR = "/" + dir[1] + "/" + dir[2] + "/"
-IAM = "DCSS"
-TARGET = "SCP"
+IAM = ""
+TARGET = ""
 if dir[2] == "dcsh":
     IAM = "DCSH"
     TARGET = "DTP"
@@ -23,7 +23,7 @@ elif dir[2] == "dcsk":
     IAM = "DCSK"
     TARGET = "DTP"
 elif dir[2] == "dcss":
-    IAM == "DCSS"
+    IAM = "DCSS"
     TARGET = "SCP"
 
 #FUN_OK = 1
@@ -111,6 +111,7 @@ CMD_SETRAMPPARAM = "SetRampParam"
 CMD_SETFSPARAM = "SetFSParam"
 CMD_ACQUIRERAMP = "ACQUIRERAMP"
 CMD_STOPACQUISITION = "STOPACQUISITION"
+CMD_CONNECT_ICS_Q = "ConnectToICSQ"
 CMD_WRITEASICREG = "writeASICreg"
 CMD_READASICREG = "readASICreg"
 CMD_GETTELEMETRY = "GetTelemetry"

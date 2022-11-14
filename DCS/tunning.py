@@ -14,7 +14,7 @@ import astropy.io.fits as fits
 import numpy as np
 
 def cal_mean(path):
-    print("Get a mean value")
+    #print("Get a mean value")
 
     head = fits.PrimaryHDU()
     frm = fits.open(path)
@@ -39,7 +39,7 @@ def cal_mean(path):
     active_img = img[4:2044, 4:2044]
     active_img_mean = np.mean(active_img)
 
-    print("mean:", ref_img_mean, active_img_mean)
+    #print("mean:", ref_img_mean, active_img_mean)
 
     ref, active = [], []
     for row in range(2048):
@@ -55,7 +55,7 @@ def cal_mean(path):
     ref_aver = np.mean(ref)
     active_aver = np.mean(active)
     
-    print("mean 2:", ref_aver, active_aver)
+    #print("mean 2:", ref_aver, active_aver)
 
     '''
     ref_sum, active_sum = 0, 0

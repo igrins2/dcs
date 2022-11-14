@@ -38,7 +38,7 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.iam = "GUI"
         self.target = "CORE"
 
-        self.logwrite(INFO, "start DCS gui!!!")        
+        self.log.logwrite(self.iam, INFO, "start DCS gui!!!")        
 
         #start core!!!
         self.proc_core = subprocess.Popen(['python', WORKING_DIR + 'workspace/dcs/DCS/DC_core.py'])
@@ -48,14 +48,24 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         cfg = sc.LoadConfig(WORKING_DIR + "DCS/DCS.ini")
 
         # server id, pwd
-        self.myid = cfg.get(IAM, 'localhost_myid')
-        self.pwd = cfg.get(IAM, 'localhost_pwd')
+        self.myid = cfg.get(IAM, 'myid')
+        self.pwd = cfg.get(IAM, 'pwd')
 
         # exchange - queue
         self.gui_ex = cfg.get("DC", 'gui_exchange')
         self.gui_q = cfg.get("DC", 'gui_routing_key')
         self.core_ex = cfg.get("DC", 'core_exchange')
         self.core_q = cfg.get("DC", 'core_routing_key')
+
+        self.asic_Vreset = cfg.get("DC", 'Vreset')
+        self.asic_Dsub = cfg.get("DC", 'Dsub')
+        self.asic_VBiasGate = cfg.get("DC", 'VBiasGate')
+        self.asic_VrefMain = cfg.get("DC", 'VrefMain')
+
+        self.e_write_Vreset.setText(self.asic_Vreset)
+        self.e_write_Dsub.setText(self.asic_Dsub)
+        self.e_write_Vbiasgate.setText(self.asic_VBiasGate)
+        self.e_write_Vrefmain.setText(self.asic_VrefMain)
 
         self.loadfile_path = cfg.get('DC', 'config-dir')
         self.loadfile_path = WORKING_DIR + self.loadfile_path
@@ -72,6 +82,8 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         #-------------------------------------------------------
 
         self.init_events()
+
+        self.label_IAM.setText(IAM)
 
         self.chk_ROI_mode.setEnabled(False)
 
@@ -91,11 +103,12 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.cmb_ouput_channels.setCurrentText(self.output_channel)
 
         self.samplingMode = UTR_MODE
+        self.radio_UTR.setChecked(True)
 
         self.set_param_ui(1, 1, 1, 0, 1)
         self.e_exp_time.setText("1.63")
         self.expTime = 1.63
-        self.cal_waittime = 0.0
+        self.cal_waittime = 0.0        
 
         self.radio_exp_time.setChecked(True)
         self.radio_fowler_number.setChecked(False)
@@ -116,40 +129,24 @@ class MainWindow(Ui_MainWindow, QMainWindow):
 
     
     def closeEvent(self, event: QCloseEvent) -> None:
-        self.logwrite(INFO, "DCS gui closing...")
+        self.log.logwrite(self.iam, INFO, "DCS gui closing...")
 
         #need to test
-        #self.send_message(CMD_EXIT)
+        self.send_message(CMD_EXIT)
 
         if self.proc_core != None:
             self.proc_core.terminate()
 
         for th in threading.enumerate():
-            self.logwrite(INFO, th.name + " exit.")
+            self.log.logwrite(self.iam, INFO, th.name + " exit.")
 
         if self.queue:
             self.channel_q.stop_consuming()
             self.connection_q.close()
 
-        self.logwrite(INFO, "DCS gui closed!")
+        self.log.logwrite(self.iam, INFO, "DCS gui closed!")
 
         return super().closeEvent(event)
-
-
-    def logwrite(self, level, message):
-        level_name = ""
-        if level == DEBUG:
-            level_name = "DEBUG"
-        elif level == INFO:
-            level_name = "INFO"
-        elif level == WARNING:
-            level_name = "WARNING"
-        elif level == ERROR:
-            level_name = "ERROR"
-        
-        msg = "[%s:%s] %s" % (self.iam, level_name, message)
-        self.log.send(level, msg)
-        
 
 
     def connect_to_server_ex(self):
@@ -183,16 +180,17 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         try:
             self.channel_q.basic_consume(queue=self.queue, on_message_callback=self.callback, auto_ack=True)
             self.channel_q.start_consuming()
+            self.btn_connect_guiq.setEnabled(False)
         except Exception as e:
             if self.channel_q:
-                self.logwrite(ERROR, "The communication of server was disconnected!")
-            
+                self.log.logwrite(self.iam, ERROR, "The communication of server (local) was disconnected!")
+                self.btn_connect_guiq.setEnabled(True)
 
 
     def callback(self, ch, method, properties, body):
         cmd = body.decode()
         msg = "receive: %s" % cmd
-        self.logwrite(INFO, msg)
+        self.log.logwrite(self.iam, INFO, msg)
 
         param = cmd.split()
 
@@ -205,11 +203,10 @@ class MainWindow(Ui_MainWindow, QMainWindow):
             self.label_ver.setText(param[1])
 
         elif param[0] == CMD_MEASURETIME:
-            str_mea_time = "%.3f" % self.measured_durationT
-            self.label_measured_time.setText(str_mea_time)
+            self.label_measured_time.setText(param[1])
 
         elif param[0] == CMD_INITIALIZE1:            
-            info = "%s (%d)" % (self.label_ver.Text(), param[1])
+            info = "%s (%s)" % (param[1], param[2])
             self.label_ver.setText(info)
         
         elif param[0] == CMD_INITIALIZE2:
@@ -221,7 +218,11 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         elif param[0] == CMD_SETDETECTOR:
             pass
         elif param[0] == CMD_ERRCOUNT:
-            pass
+            self.read_addr(self.e_addr_Vreset.text())
+            self.read_addr(self.e_addr_Dsub.text())
+            self.read_addr(self.e_addr_Vbiasgate.text())
+            self.read_addr(self.e_addr_Vrefmain.text())
+
         elif param[0] == CMD_SETRAMPPARAM:
             pass
         elif param[0] == CMD_SETFSPARAM:
@@ -232,6 +233,8 @@ class MainWindow(Ui_MainWindow, QMainWindow):
             self.cur_prog_step = 100
             self.prog_sts.setValue(self.cur_prog_step)
 
+            self.elapsed_timer.stop()
+
             show_cur_cnt = "%d / %s" % (self.cur_cnt, self.e_repeat.text())
             if self.cur_cnt < int(self.e_repeat.text()):
                 self.acquireramp()
@@ -241,23 +244,41 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         elif param[0] == CMD_STOPACQUISITION:
             pass
 
+        elif param[0] == CMD_CONNECT_ICS_Q:
+            self.btn_connect_icsq.setEnabled(int(param[1]))
+
         elif param[0] == CMD_WRITEASICREG:
-            pass
+            _addr = str(hex(int(param[1])))[2:6]
+
+            if _addr == self.e_addr_Vreset.text():
+                self.read_addr(self.e_addr_Vreset.text())
+            elif _addr == self.e_addr_Dsub.text():
+                self.read_addr(self.e_addr_Dsub.text())
+            elif _addr == self.e_addr_Vbiasgate.text():
+                self.read_addr(self.e_addr_Vbiasgate.text())
+            elif _addr == self.e_addr_Vrefmain.text():
+                self.read_addr(self.e_addr_Vrefmain.text())
+            else:
+                self.read_addr(self.e_read_input.text())
 
         elif param[0] == CMD_READASICREG:
-            _text = str(hex(param[2]))[2:6]
-            if param[1] == self.e_addr_Vreset.text():
+            _addr = str(hex(int(param[1])))[2:6]
+            _text = str(hex(int(param[2])))[2:6]
+            
+            if _addr == self.e_addr_Vreset.text():
                 self.e_read_Vreset.setText(_text)
-            elif param[1] == self.e_addr_Dsub.text():
+            elif _addr == self.e_addr_Dsub.text():
                 self.e_read_Dsub.setText(_text)
-            elif param[1] == self.e_addr_Vbiasgate.text():
+            elif _addr == self.e_addr_Vbiasgate.text():
                 self.e_read_Vbiasgate.setText(_text)
-            elif param[1] == self.e_addr_Vrefmain.text():
+            elif _addr == self.e_addr_Vrefmain.text():
                 self.e_read_Vrefmain.setText(_text)
             else:
                 self.e_read_input.setText(_text)
 
         elif param[0] == CMD_GETTELEMETRY:
+            pass
+        else:
             pass
     
 
@@ -339,11 +360,17 @@ class MainWindow(Ui_MainWindow, QMainWindow):
 
         self.btn_get_telemetry.clicked.connect(self.get_telemetry)
 
+        self.btn_connect_icsq.clicked.connect(self.connect_ics_q)
+        self.btn_connect_guiq.clicked.connect(self.connect_gui_q)
+        self.btn_connect_coreq.clicked.connect(self.connect_core_q)
+
         # path
         self.btn_find_config_dir.clicked.connect(lambda: self.find_dir(CONFIG_DIR))
         self.btn_find_MACIE_reg.clicked.connect(lambda: self.find_dir(MACIE_FILE))
         self.btn_find_ASIC_firware.clicked.connect(lambda: self.find_dir(ASIC_FILE))
         self.btn_find_img_dir.clicked.connect(lambda: self.find_dir(IMG_DIR))
+
+        self.btn_ASIC_load.clicked.connect(self.asic_load)
 
         self.btn_write_Vreset.clicked.connect(lambda: self.write_addr(self.e_addr_Vreset.text(), self.e_write_Vreset.text()))
         self.btn_read_Vreset.clicked.connect(lambda: self.read_addr(self.e_addr_Vreset.text()))
@@ -486,18 +513,18 @@ class MainWindow(Ui_MainWindow, QMainWindow):
             _max_fowler_number = int((self.expTime - T_minFowler) / T_frame)
             if _fowler_num > _max_fowler_number:
                 #dialog box
-                self.logwrite(WARNING, "please change 'exposure time'!")
+                self.log.logwrite(self.iam, WARNING, "please change 'exposure time'!")
                 return False
 
         elif self.radio_fowler_number.isChecked():
             _fowler_time = self.expTime - T_frame * _fowler_num
             if _fowler_time < T_minFowler:
                 #dialog box
-                self.logwrite(WARNING, "please change 'fowler sampling number'!")
+                self.log.logwrite(self.iam, WARNING, "please change 'fowler sampling number'!")
                 return False            
 
         else:
-            self.logwrite(WARNING, "Please select 'Exp. Time' or 'N. Fowler' for judgement!")
+            self.log.logwrite(self.iam, WARNING, "Please select 'Exp. Time' or 'N. Fowler' for judgement!")
             return False
 
         return True
@@ -510,6 +537,7 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.busy = True
 
         if self.samplingMode == FOWLER_MODE and self.judge_param() == False:
+            self.busy = False
             return
 
         resets = int(self.e_resets.text())
@@ -527,7 +555,7 @@ class MainWindow(Ui_MainWindow, QMainWindow):
             self.expTime = (T_frame * reads * groups) + (T_frame * drops * (groups -1 ))
             self.cal_waittime = T_br + ((T_frame * resets) + self.expTime) * ramps
             
-            msg = "%s %d %d %d %d %d" % (CMD_SETRAMPPARAM, resets, reads, groups, drops, ramps)
+            msg = "%s %.3f %d %d %d %d %d" % (CMD_SETRAMPPARAM, self.expTime, resets, reads, groups, drops, ramps)
             self.send_message(msg)
 
             str_exp_time = "%.3f" % self.expTime
@@ -549,6 +577,7 @@ class MainWindow(Ui_MainWindow, QMainWindow):
                 self.e_drops.setText(str_fowlerTime)
             
             else:
+                fowlerTime = float(self.e_drops.text())
                 self.expTime = fowlerTime + T_frame * reads
 
                 str_exp_time = "%.3f" % self.expTime
@@ -557,7 +586,7 @@ class MainWindow(Ui_MainWindow, QMainWindow):
             self.e_reads.setText(self.e_fowler_number.text())
             self.cal_waittime = T_br + ((T_frame * resets) + fowlerTime + (2 * T_frame * reads)) * ramps
   
-            msg = "%s %d %d %d %.3f %d" % (CMD_SETFSPARAM, resets, reads, groups, fowlerTime, ramps)
+            msg = "%s %.3f %d %d %d %.3f %d" % (CMD_SETFSPARAM, self.expTime, resets, reads, groups, fowlerTime, ramps)
             self.send_message(msg)
         
         str_caltime = "%.3f" % self.cal_waittime
@@ -598,28 +627,43 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.cur_cnt += 1
 
         self.label_measured_time.setText("0.0")
+        self.label_elapsed.setText("0.0")
 
         self.prog_timer = QTimer(self)
-        self.prog_timer.setInterval(self.cal_waittime*10)
+        self.prog_timer.setInterval(int(self.cal_waittime*10))
         self.prog_timer.timeout.connect(self.show_progressbar)
 
         self.cur_prog_step = 0
         self.prog_sts.setValue(self.cur_prog_step)
         self.prog_timer.start()
+
+        self.elapsed_timer = QTimer(self)
+        self.elapsed_timer.setInterval(0.001)
+        self.elapsed_timer.timeout.connect(self.show_elapsed)
+        
+        self.elapsed = ti.time()
+        self.label_elapsed.setText("0.0")
+        self.elapsed_timer.start()
         
         msg = "%s %d" % (CMD_ACQUIRERAMP, self.chk_ROI_mode.isChecked())
         self.send_message(msg)  
-
-
+        
+        
     def show_progressbar(self):
         if self.cur_prog_step >= 100:
-            self.logwrite(INFO, "progress bar end!!!")
+            self.log.logwrite(self.iam, INFO, "progress bar end!!!")
+            self.prog_timer.stop()
             return
         
-        self.cur_prog_step += self.cal_waittime * 2
+        self.cur_prog_step += 1
         self.prog_sts.setValue(self.cur_prog_step)       
-        self.logwrite(INFO, self.cur_prog_step)
+        self.log.logwrite(self.iam, DEBUG, self.cur_prog_step)
 
+
+    def show_elapsed(self):
+        msg = "%.3f" % (ti.time() - self.elapsed)
+        self.label_elapsed.setText(msg)
+        #print(ti.time() - self.elapsed)
 
 
     def stop_acquistion(self):
@@ -627,13 +671,14 @@ class MainWindow(Ui_MainWindow, QMainWindow):
             return
 
         self.prog_timer.stop()
+        self.elapsed_timer.stop()
         
         self.send_message(CMD_STOPACQUISITION)
 
 
     def show_fits(self):
         msg = "%s %d" % (CMD_SHOWFITS, self.chk_show_fits.isChecked())
-        self.send_message(CMD_SHOWFITS)
+        self.send_message(msg)
 
 
     def get_telemetry(self):
@@ -643,6 +688,22 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.busy = True
 
         self.send_message(CMD_GETTELEMETRY)
+
+
+    def connect_ics_q(self):
+        self.send_message(CMD_CONNECT_ICS_Q)
+
+
+    def connect_gui_q(self):
+        for th in threading.enumerate():
+            self.log.logwrite(self.iam, INFO, th.name + " exit.")
+
+        self.connect_to_server_q()
+
+
+    def connect_core_q(self):
+        #start core!!!
+        self.proc_core = subprocess.Popen(['python', WORKING_DIR + 'workspace/dcs/DCS/DC_core.py'])
 
 
     def find_dir(self, find_option):
@@ -672,11 +733,15 @@ class MainWindow(Ui_MainWindow, QMainWindow):
                     self.e_ASIC_firmware.setText(file[-1])
 
     
-    def write_addr(self, addr, value):
-        if self.busy:
-            return
-        self.busy = True
+    def asic_load(self):        
 
+        self.write_addr(self.e_addr_Vreset.text(), self.e_write_Vreset.text())
+        self.write_addr(self.e_addr_Dsub.text(), self.e_write_Dsub.text())
+        self.write_addr(self.e_addr_Vbiasgate.text(), self.e_write_Vbiasgate.text())
+        self.write_addr(self.e_addr_Vrefmain.text(), self.e_write_Vrefmain.text())
+
+
+    def write_addr(self, addr, value):
         if value == "":
             return 
 
@@ -688,7 +753,7 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         
 
 
-    def read_addr(self, addr):        
+    def read_addr(self, addr):   
         if addr == "":
             return
 
