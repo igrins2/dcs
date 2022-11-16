@@ -43,7 +43,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
         #start core!!!
         self.proc_core = None
-        #self.proc_core = subprocess.Popen(['python', WORKING_DIR + 'workspace/dcs/DCS/DC_core.py'])
+        self.proc_core = subprocess.Popen(['python', WORKING_DIR + 'workspace/dcs/DCS/DC_core.py'])
 
         #-------------------------------------------------------
         # load ini file
