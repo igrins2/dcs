@@ -29,7 +29,6 @@ from Libs.logger import *
 from MACIE import *
 from DC_def import *
 
-from DC_gui_sub import *
 import tunning as tn
 
 import threading
@@ -141,7 +140,6 @@ class DC(threading.Thread):
 
         self.measured_startT = 0
 
-        self.save_as = False    #for engineer
         self.showfits = False
 
         self.init1 = False  #for ics
@@ -152,8 +150,6 @@ class DC(threading.Thread):
         self.connect_to_server_ex()
         self.connect_to_server_q()
 
-        self.send_message(CMD_CORESTART)
-
 
     def __del__(self):
         self.log.logwrite(self.iam, INFO, "DCS core closing...")
@@ -161,6 +157,7 @@ class DC(threading.Thread):
         for th in threading.enumerate():
             self.log.logwrite(self.iam, INFO, th.name + " exit.")
 
+        '''
         if self.queue_ics:
             self.channel_ics_q.stop_consuming()
             self.connection_ics_q.close()
@@ -168,6 +165,7 @@ class DC(threading.Thread):
         if self.queue:
             self.channel_q.stop_consuming()
             self.connection_q.close()
+        '''
 
         self.log.logwrite(self.iam, INFO, "DCS core closed!")
        
@@ -197,19 +195,26 @@ class DC(threading.Thread):
             th = threading.Thread(target=self.consumer_ics)
             th.start()
 
+            
+
 
     # RabbitMQ communication    
     def consumer_ics(self):
         try:
             self.channel_ics_q.basic_consume(queue=self.queue_ics, on_message_callback=self.callback_ics, auto_ack=True)
             self.channel_ics_q.start_consuming()
-            msg = "%s 1" % (CMD_CONNECT_ICS_Q)
-            self.send_message(msg)
+            #msg = "%s 1" % (CMD_CONNECT_ICS_Q)
+            #self.send_message(msg)
         except Exception as e:
             if self.channel_ics_q:
                 self.log.logwrite(self.iam, ERROR, "The communication of server (ics) was disconnected!\r\nPlease click the button 'ICS Q'!")
-                msg = "%s 0" % (CMD_CONNECT_ICS_Q)
-                self.send_message(msg)
+                #msg = "%s 0" % (CMD_CONNECT_ICS_Q)
+                #self.send_message(msg)
+
+                for th in threading.enumerate():
+                    self.log.logwrite(self.iam, INFO, th.name + " exit.")
+
+                self.connect_to_server_ics_q()
 
 
     def callback_ics(self, ch, method, properties, body):
@@ -322,6 +327,8 @@ class DC(threading.Thread):
             th = threading.Thread(target=self.consumer)
             th.start() 
 
+            self.send_message(CMD_CORESTART)
+
 
     # RabbitMQ communication    
     def consumer(self):
@@ -331,7 +338,11 @@ class DC(threading.Thread):
         except Exception as e:
             if self.channel_q:
                 self.log.logwrite(self.iam, ERROR, "The communication of server (local) was disconnected!\r\nPlease check the core process and click the button 'CORE Q'!")
-                self.__del__()
+                
+                for th in threading.enumerate():
+                    self.log.logwrite(self.iam, INFO, th.name + " exit.")
+
+                self.connect_to_server_q()
 
 
     def callback(self, ch, method, properties, body):
@@ -348,9 +359,6 @@ class DC(threading.Thread):
         elif param[0] == CMD_SHOWFITS:
             self.showfits = bool(param[1])
         
-        elif param[0] == CMD_SAVEAS:
-            self.save_as = int(param[1])
-
         elif param[0] == CMD_EXIT:
             self.__del__()
 
@@ -401,8 +409,8 @@ class DC(threading.Thread):
         elif param[0] == CMD_STOPACQUISITION:
             self.StopAcquisition()
 
-        elif param[0] == CMD_CONNECT_ICS_Q:
-            self.connect_to_server_ics_q()
+        #elif param[0] == CMD_CONNECT_ICS_Q:
+        #    self.connect_to_server_ics_q()
 
         elif param[0] == CMD_WRITEASICREG:
             res = self.write_ASIC_reg(int(param[1]), int(param[2]))
@@ -1164,14 +1172,6 @@ class DC(threading.Thread):
         else:
             self.send_message(CMD_ACQUIRERAMP + " OK")        
 
-        if self.save_as == True:
-            ss = SaveAsDlg(self)
-            res = ss.showModal()
-            if res == QDialog.Accepted:
-                self.log.logwrite(self.iam, INFO, "Exit")
-            elif res == QDialog.Rejected:
-                self.log.logwrite(self.iam, INFO, "Exit 2")
-
         return True
 
 
@@ -1180,27 +1180,29 @@ class DC(threading.Thread):
             return False
 
         # Wait for available science data bytes
-        idleReset, moreDelay = 1, 4000
+        idleReset, moreDelay = 1, 2000
         triggerTimeout = (T_frame * 1000) * (self.resets + idleReset) + moreDelay  # delay time for one frame
-        self.log.logwrite(self.iam, DEBUG, "triggerTimeout: " + triggerTimeout)
+        msg = "triggerTimeout 1: %.3f" % triggerTimeout
+        self.log.logwrite(self.iam, DEBUG, msg)
 
         ti.sleep(1.5)
         
         getByte, frameSize = 0, 0
         frameSize = (self.x_stop - self.x_start + 1) * (self.y_stop - self.y_start + 1)
         getByte = frameSize * 2
+        print(getByte)
         
         byte = 0        
         for i in range(20):
             byte = lib.MACIE_AvailableScienceData(self.handle)
-            #if byte >= getByte:
-            if byte > 0:
+            if byte >= getByte:
+            #if byte > 0:
                 msg = "Available science data = %d bytes, Loop = %d" % (
                     byte, i)
                 self.log.logwrite(self.iam, INFO, msg)
                 break
             self.log.logwrite(self.iam, INFO, "Wait (ROI)....")
-            ti.sleep(triggerTimeout / 10 / 1000)
+            ti.sleep(triggerTimeout / 20 / 1000)
 
         if byte <= 0:
             self.log.logwrite(self.iam, WARNING, "Trigger timeout: no available science data")
@@ -1227,14 +1229,6 @@ class DC(threading.Thread):
             self.send_message_to_ics(CMD_ACQUIRERAMP + " OK")
         else:
             self.send_message(CMD_ACQUIRERAMP + " OK")
-
-        if self.save_as == True:
-            ss = SaveAsDlg(self)
-            res = ss.showModal()
-            if res == QDialog.Accepted:
-                self.log.logwrite(self.iam, DEBUG, "Exit")
-            elif res == QDialog.Rejected:
-                self.log.logwrite(self.iam, DEBUG, "Exit 2")
 
         return True
 
@@ -1291,7 +1285,7 @@ class DC(threading.Thread):
                         idx += 1
 
             measured_durationT = ti.time() - self.measured_startT
-            msg = "%s %.3f" % (CMD_MEASURETIME, measured_durationT)
+            msg = "%s %.3f %s" % (CMD_MEASURETIME, measured_durationT, filename)
             self.send_message(msg)
 
             if self.showfits and self.ramps == 1 and self.groups == 1 and self.reads == 1:
@@ -1387,7 +1381,7 @@ class DC(threading.Thread):
         self.log.logwrite(self.iam, INFO, tmp)
         
         measured_durationT = ti.time() - self.measured_startT
-        msg = "%s %.3f" % (CMD_MEASURETIME, measured_durationT)
+        msg = "%s %.3f %s" % (CMD_MEASURETIME, measured_durationT, path + "Result/" + filename)
         self.send_message(msg)
 
         if self.showfits:
@@ -1652,7 +1646,10 @@ class DC(threading.Thread):
         if self.handle == 0:
             return False
 
-        tlm = [0.0 for _ in range(79)]
+        #tlm = [0.0 for _ in range(79)]
+        arr_list = [0.0 for _ in range(79)]
+        arr = np.array(arr_list)
+        tlm = arr.ctypes.data_as(POINTER(c_float))
         if lib.MACIE_GetTelemetryAll(self.handle, self.slctMACIEs, tlm) != MACIE_OK:
             self.log.logwrite(self.iam, ERROR, self.GetErrMsg())
             return False

@@ -24,9 +24,10 @@ from DC_def import *
 
 import threading
 import subprocess
-import time
+import time as ti
+from shutil import copyfile
 
-class MainWindow(Ui_MainWindow, QMainWindow):
+class MainWindow(Ui_Dialog, QMainWindow):
 
     def __init__(self, autostart=False):
         super().__init__()
@@ -41,7 +42,8 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.log.logwrite(self.iam, INFO, "start DCS gui!!!")        
 
         #start core!!!
-        self.proc_core = subprocess.Popen(['python', WORKING_DIR + 'workspace/dcs/DCS/DC_core.py'])
+        self.proc_core = None
+        #self.proc_core = subprocess.Popen(['python', WORKING_DIR + 'workspace/dcs/DCS/DC_core.py'])
 
         #-------------------------------------------------------
         # load ini file
@@ -116,8 +118,13 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.chk_autosave.setText("Save AS")
         self.chk_autosave.setChecked(False)
 
+        self.use_saveAs()
+        self.e_user_dir.setText(WORKING_DIR + "DCS/Data/")
+
         self.cur_cnt = 0
         self.cur_prog_step = 0
+        self.fitsfullpath = ""
+        self.asic_load_click = False
 
         self.prog_sts.setValue(0)
 
@@ -184,7 +191,12 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         except Exception as e:
             if self.channel_q:
                 self.log.logwrite(self.iam, ERROR, "The communication of server (local) was disconnected!")
-                self.btn_connect_guiq.setEnabled(True)
+                #self.btn_connect_guiq.setEnabled(True)
+                
+                for th in threading.enumerate():
+                    self.log.logwrite(self.iam, INFO, th.name + " exit.")
+
+                self.connect_to_server_q()
 
 
     def callback(self, ch, method, properties, body):
@@ -204,6 +216,16 @@ class MainWindow(Ui_MainWindow, QMainWindow):
 
         elif param[0] == CMD_MEASURETIME:
             self.label_measured_time.setText(param[1])
+            
+            if self.chk_autosave.isChecked():
+                self.fitsfullpath = param[2]
+                file = param[2].split("/")
+                path = ""
+                for i in file[1:-1]:
+                    path += "/"
+                    path += i
+                self.e_user_dir.setText(path)
+                self.e_user_file.setText(file[-1][:-5] + "_")
 
         elif param[0] == CMD_INITIALIZE1:            
             info = "%s (%s)" % (param[1], param[2])
@@ -244,21 +266,21 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         elif param[0] == CMD_STOPACQUISITION:
             pass
 
-        elif param[0] == CMD_CONNECT_ICS_Q:
-            self.btn_connect_icsq.setEnabled(int(param[1]))
+        #elif param[0] == CMD_CONNECT_ICS_Q:
+        #    self.btn_connect_icsq.setEnabled(int(param[1])*(-1))
 
         elif param[0] == CMD_WRITEASICREG:
             _addr = str(hex(int(param[1])))[2:6]
 
-            if _addr == self.e_addr_Vreset.text():
+            if self.asic_load_click and _addr == self.e_addr_Vreset.text():
                 self.read_addr(self.e_addr_Vreset.text())
-            elif _addr == self.e_addr_Dsub.text():
+            elif self.asic_load_click and _addr == self.e_addr_Dsub.text():
                 self.read_addr(self.e_addr_Dsub.text())
-            elif _addr == self.e_addr_Vbiasgate.text():
+            elif self.asic_load_click and _addr == self.e_addr_Vbiasgate.text():
                 self.read_addr(self.e_addr_Vbiasgate.text())
-            elif _addr == self.e_addr_Vrefmain.text():
+            elif self.asic_load_click and _addr == self.e_addr_Vrefmain.text():
                 self.read_addr(self.e_addr_Vrefmain.text())
-            else:
+            elif self.asic_load_click and _addr == self.e_addr_input.text():
                 self.read_addr(self.e_read_input.text())
 
         elif param[0] == CMD_READASICREG:
@@ -360,15 +382,18 @@ class MainWindow(Ui_MainWindow, QMainWindow):
 
         self.btn_get_telemetry.clicked.connect(self.get_telemetry)
 
-        self.btn_connect_icsq.clicked.connect(self.connect_ics_q)
-        self.btn_connect_guiq.clicked.connect(self.connect_gui_q)
-        self.btn_connect_coreq.clicked.connect(self.connect_core_q)
+        self.btn_connect_icsq.setHidden(True)
+        self.btn_connect_guiq.setHidden(True)
+        self.btn_connect_coreq.setHidden(True)
+        #self.btn_connect_icsq.clicked.connect(self.connect_ics_q)
+        #self.btn_connect_guiq.clicked.connect(self.connect_gui_q)
+        #self.btn_connect_coreq.clicked.connect(self.connect_core_q)
 
         # path
-        self.btn_find_config_dir.clicked.connect(lambda: self.find_dir(CONFIG_DIR))
-        self.btn_find_MACIE_reg.clicked.connect(lambda: self.find_dir(MACIE_FILE))
-        self.btn_find_ASIC_firware.clicked.connect(lambda: self.find_dir(ASIC_FILE))
-        self.btn_find_img_dir.clicked.connect(lambda: self.find_dir(IMG_DIR))
+        self.btn_find_config_dir.clicked.connect(lambda: self.find_dir_file(CONFIG_DIR))
+        self.btn_find_MACIE_reg.clicked.connect(lambda: self.find_dir_file(MACIE_FILE))
+        self.btn_find_ASIC_firware.clicked.connect(lambda: self.find_dir_file(ASIC_FILE))
+        self.btn_find_img_dir.clicked.connect(lambda: self.find_dir_file(IMG_DIR))
 
         self.btn_ASIC_load.clicked.connect(self.asic_load)
 
@@ -387,6 +412,9 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.btn_write_input.clicked.connect(lambda: self.write_addr(self.e_addr_input.text(), self.e_write_input.text()))
         self.btn_read_input.clicked.connect(lambda: self.read_addr(self.e_addr_input.text()))
 
+        self.chk_autosave.clicked.connect(self.use_saveAs)
+        self.btn_find_user_dir.clicked.connect(self.find_dir)
+        self.btn_save.clicked.connect(self.copy_fits)
 
     # ----------------------------------------------------------------------
     # Buttons           
@@ -620,9 +648,6 @@ class MainWindow(Ui_MainWindow, QMainWindow):
             self.y_stop = int(self.e_y_stop.text())
             msg = "%s %d %d %d %d" % (CMD_SETWINPARAM, self.x_start, self.x_stop, self.y_start, self.y_stop)
             self.send_message(msg)
-
-        msg = "%s %d" % (CMD_SAVEAS, self.chk_autosave.isChecked())
-        self.send_message(msg)
         
         self.cur_cnt += 1
 
@@ -650,9 +675,13 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         
         
     def show_progressbar(self):
+    #    th = threading.Thread(target=self.progressbar)
+    #    th.start() 
+    #def progressbar(self):
         if self.cur_prog_step >= 100:
             self.log.logwrite(self.iam, INFO, "progress bar end!!!")
             self.prog_timer.stop()
+            self.elapsed_timer.stop()
             return
         
         self.cur_prog_step += 1
@@ -680,6 +709,33 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         msg = "%s %d" % (CMD_SHOWFITS, self.chk_show_fits.isChecked())
         self.send_message(msg)
 
+        
+    def use_saveAs(self):
+        use = self.chk_autosave.isChecked()
+        
+        self.e_user_dir.setEnabled(use)
+        self.e_user_file.setEnabled(use)
+        self.btn_find_user_dir.setEnabled(use)
+        self.btn_save.setEnabled(use)
+
+
+    def find_dir(self):
+        loader = self.e_user_dir.text()
+        folder = QFileDialog.getExistingDirectory(self, "Select Directory", loader)
+        if folder:
+            self.e_user_dir.setText(folder)
+
+
+    def copy_fits(self):
+
+        if self.fitsfullpath == "":
+            return
+
+        newfile = self.e_user_dir.text() + "/" + self.e_user_file.text() + ".fits"
+        copyfile(self.fitsfullpath, newfile)
+
+        self.fitsfullpath = ""
+
 
     def get_telemetry(self):
 
@@ -690,23 +746,23 @@ class MainWindow(Ui_MainWindow, QMainWindow):
         self.send_message(CMD_GETTELEMETRY)
 
 
-    def connect_ics_q(self):
-        self.send_message(CMD_CONNECT_ICS_Q)
+    #def connect_ics_q(self):
+    #    self.send_message(CMD_CONNECT_ICS_Q)
 
 
-    def connect_gui_q(self):
-        for th in threading.enumerate():
-            self.log.logwrite(self.iam, INFO, th.name + " exit.")
+    #def connect_gui_q(self):
+    #    for th in threading.enumerate():
+    #        self.log.logwrite(self.iam, INFO, th.name + " exit.")
 
-        self.connect_to_server_q()
-
-
-    def connect_core_q(self):
-        #start core!!!
-        self.proc_core = subprocess.Popen(['python', WORKING_DIR + 'workspace/dcs/DCS/DC_core.py'])
+    #    self.connect_to_server_q()
 
 
-    def find_dir(self, find_option):
+    #def connect_core_q(self):
+    #    #start core!!!
+    #    self.proc_core = subprocess.Popen(['python', WORKING_DIR + 'workspace/dcs/DCS/DC_core.py'])
+ 
+
+    def find_dir_file(self, find_option):
         if find_option == IMG_DIR:
             loader = self.e_img_dir.text()
             folder = QFileDialog.getExistingDirectory(self, "Select Directory", loader)
@@ -735,15 +791,18 @@ class MainWindow(Ui_MainWindow, QMainWindow):
     
     def asic_load(self):        
 
-        self.write_addr(self.e_addr_Vreset.text(), self.e_write_Vreset.text())
-        self.write_addr(self.e_addr_Dsub.text(), self.e_write_Dsub.text())
-        self.write_addr(self.e_addr_Vbiasgate.text(), self.e_write_Vbiasgate.text())
-        self.write_addr(self.e_addr_Vrefmain.text(), self.e_write_Vrefmain.text())
+        self.write_addr(self.e_addr_Vreset.text(), self.e_write_Vreset.text(), True)
+        self.write_addr(self.e_addr_Dsub.text(), self.e_write_Dsub.text(), True)
+        self.write_addr(self.e_addr_Vbiasgate.text(), self.e_write_Vbiasgate.text(), True)
+        self.write_addr(self.e_addr_Vrefmain.text(), self.e_write_Vrefmain.text(), True)
 
 
-    def write_addr(self, addr, value):
+
+    def write_addr(self, addr, value, click=False):
         if value == "":
             return 
+
+        self.asic_load_click = click
 
         _addr = int("0x" + addr, 16)
         _value = int("0x" + value, 16)
