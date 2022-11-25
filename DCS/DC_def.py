@@ -14,17 +14,14 @@ CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 import os
 dir = os.getcwd().split("/")
 WORKING_DIR = "/" + dir[1] + "/" + dir[2] + "/"
-IAM = ""
-TARGET = ""
+IAM = "DCSS"
+TARGET = "DTP"
 if dir[2] == "dcsh":
     IAM = "DCSH"
-    TARGET = "DTP"
 elif dir[2] == "dcsk":
     IAM = "DCSK"
-    TARGET = "DTP"
 elif dir[2] == "dcss":
     IAM = "DCSS"
-    TARGET = "SCP"
 
 #FUN_OK = 1
 
