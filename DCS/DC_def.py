@@ -3,12 +3,10 @@
 """
 Created on Mar 4, 2022
 
-Modified on Sep 16, 2022
+Modified on Dec 15, 2022
 
 @author: hilee
 """
-
-CLASS_NAME = "[Detector Control Core]"
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
 import os
@@ -25,17 +23,31 @@ elif dir[2] == "dcss":
 
 #FUN_OK = 1
 
-FITS_CNT = 50
+FITS_HDR_CNT = 50
+
+FieldNames = [('date', str), ('time', str),
+              ('pressure', float),
+              ('bench', float), ('bench_tc', float),
+              ('grating', float), ('grating_tc', float),
+              ('detS', float), ('detS_tc', float),
+              ('detK', float), ('detK_tc', float),
+              ('camH', float),
+              ('detH', float), ('detH_tc', float),
+              ('benchcenter', float), ('coldhead01', float), 
+              ('coldhead02', float), ('coldstop', float), 
+              ('charcoalBox', float), ('camK', float), 
+              ('shieldtop', float), ('air', float), 
+              ('alert_status', str)]
 
 # result message
 RET_OK = "succeeded"
 RET_FAIL = "failed"
 
 # LOG option
-DEBUG = 0
-INFO = 1
-WARNING = 2
-ERROR = 3
+DEBUG = "DEBUG"
+INFO = "INFO"
+WARNING = "WARNING"
+ERROR = "ERROR"
 
 # ASIC addr
 V_RESET = 0
@@ -95,6 +107,8 @@ ASICAddr_PreAmpReg1Ch1ENAddr = 0x5100
 ASICAddr = 0x6100
 ASICAddr_State = 0x6900
 
+HK_REQ_UPLOAD_DB = "UploadDB"   #uploader
+
 CMD_CORESTART = "CoreStart"
 CMD_SIMULATION = "Simulation"
 CMD_VERSION = "LibVersion"
@@ -118,6 +132,8 @@ CMD_STOPACQUISITION = "STOPACQUISITION"
 CMD_WRITEASICREG = "writeASICreg"
 CMD_READASICREG = "readASICreg"
 CMD_GETTELEMETRY = "GetTelemetry"
+
+ALIVE = "Alive"
 
 
 

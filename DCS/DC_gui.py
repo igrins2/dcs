@@ -3,7 +3,7 @@
 """
 Created on Aug 4, 2022
 
-Modified on Aug 28, 2022
+Modified on Dec 15, 2022
 
 @author: hilee
 """
@@ -40,7 +40,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self._iam = "GUI"
         self._target = "CORE"
 
-        self.log.logwrite(self._iam, INFO, "start DCS gui!!!")        
+        self.log.send(self._iam, INFO, "start DCS gui!!!")        
 
         #start core!!!
         self.proc_core = None
@@ -140,20 +140,22 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
     
     def closeEvent(self, event: QCloseEvent) -> None:
-        self.log.logwrite(self._iam, INFO, "DCS gui closing...")
+        self.log.send(self._iam, INFO, "DCS gui closing...")
 
         self.producer.send_message(self._target, self.gui_q, CMD_EXIT)
 
         for th in threading.enumerate():
-            self.log.logwrite(self._iam, INFO, th.name + " exit.")
+            self.log.send(self._iam, INFO, th.name + " exit.")
 
         if self.proc_core != None:
             self.proc_core.terminate()
 
-        del self.producer
-        del self.consumer
+        if self.consumer != None:
+            self.consumer.stop_consumer()
+        self.producer.__del__()
+        self.consumer.__del__()
 
-        self.log.logwrite(self._iam, INFO, "DCS gui closed!")
+        self.log.send(self._iam, INFO, "DCS gui closed!")
 
         return super().closeEvent(event)
 
@@ -178,7 +180,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
     def callback(self, ch, method, properties, body):
         cmd = body.decode()
         msg = "receive: %s" % cmd
-        self.log.logwrite(self._iam, INFO, msg)
+        self.log.send(self._iam, INFO, msg)
 
         param = cmd.split()
 
@@ -206,6 +208,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
         elif param[0] == CMD_INITIALIZE1:            
             info = "%s (%s)" % (param[1], param[2])
             self.label_ver.setText(info)
+
+            self.btn_initialize1.setEnabled(False)
         
         elif param[0] == CMD_INITIALIZE2:
             pass
@@ -234,6 +238,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
             self.elapsed_timer.stop()
 
             show_cur_cnt = "%d / %s" % (self.cur_cnt, self.e_repeat.text())
+            self.label_cur_num.setText(show_cur_cnt)
             if self.cur_cnt < int(self.e_repeat.text()):
                 self.acquireramp()
             else:
@@ -517,18 +522,20 @@ class MainWindow(Ui_Dialog, QMainWindow):
             _max_fowler_number = int((self.expTime - T_minFowler) / T_frame)
             if _fowler_num > _max_fowler_number:
                 #dialog box
-                self.log.logwrite(self._iam, WARNING, "please change 'exposure time'!")
+                QMessageBox.warning(self, WARNING, "please change 'exposure time'!")
+                self.log.send(self._iam, WARNING, "please change 'exposure time'!")
                 return False
 
         elif self.radio_fowler_number.isChecked():
             _fowler_time = self.expTime - T_frame * _fowler_num
             if _fowler_time < T_minFowler:
                 #dialog box
-                self.log.logwrite(self._iam, WARNING, "please change 'fowler sampling number'!")
+                QMessageBox.warning(self, WARNING, "please change 'fowler sampling number'!")
+                self.log.send(self._iam, WARNING, "please change 'fowler sampling number'!")
                 return False            
 
         else:
-            self.log.logwrite(self._iam, WARNING, "Please select 'Exp. Time' or 'N. Fowler' for judgement!")
+            self.log.send(self._iam, WARNING, "Please select 'Exp. Time' or 'N. Fowler' for judgement!")
             return False
 
         return True
@@ -628,7 +635,6 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.cur_cnt += 1
 
         self.label_measured_time.setText("0.0")
-        self.label_elapsed.setText("0.0")
 
         self.prog_timer = QTimer(self)
         self.prog_timer.setInterval(int(self.cal_waittime*10))
@@ -655,14 +661,14 @@ class MainWindow(Ui_Dialog, QMainWindow):
     #    th.start() 
     #def progressbar(self):
         if self.cur_prog_step >= 100:
-            self.log.logwrite(self._iam, INFO, "progress bar end!!!")
+            self.log.send(self._iam, INFO, "progress bar end!!!")
             self.prog_timer.stop()
             self.elapsed_timer.stop()
             return
         
         self.cur_prog_step += 1
         self.prog_sts.setValue(self.cur_prog_step)       
-        self.log.logwrite(self._iam, DEBUG, self.cur_prog_step)
+        #self.log.send(self._iam, DEBUG, self.cur_prog_step)
 
 
     def show_elapsed(self):
