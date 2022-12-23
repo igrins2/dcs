@@ -194,7 +194,7 @@ class DC(threading.Thread):
         self.consumer_hk.define_consumer(self.hk_sub_q, self.callback_hk)
         
         th = threading.Thread(target=self.consumer_hk.start_consumer)
-        th.daemon = True
+        #th.daemon = True
         th.start()        
 
     
@@ -234,7 +234,7 @@ class DC(threading.Thread):
         self.consumer_ics.define_consumer(self.ics_q, self.callback_ics)
 
         th = threading.Thread(target=self.consumer_ics.start_consumer)
-        th.daemon = True
+        #th.daemon = True
         th.start() 
 
 
@@ -321,7 +321,7 @@ class DC(threading.Thread):
         self.consumer.define_consumer(self.gui_q, self.callback)
 
         th = threading.Thread(target=self.consumer.start_consumer)
-        th.daemon = True
+        #th.daemon = True
         th.start() 
 
         self.producer.send_message(self.core_q, CMD_CORESTART)
