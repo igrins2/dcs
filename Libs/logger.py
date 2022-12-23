@@ -15,11 +15,7 @@ import Libs.SetConfig as sc
 class LOG():
 
     def __init__(self, work_dir):
-                
-        # load ini file
-        cfg = sc.LoadConfig(work_dir + "/Config/IGRINS.ini")
-        
-        self.thatday = ti.strftime("%04Y%02m%02d.log", ti.localtime())
+                        
         self.path = "%s/Log/" % (work_dir)
         self.createFolder(self.path)
         
@@ -35,7 +31,7 @@ class LOG():
     def send(self, iam, level, message):
        
         fname = strftime("%Y%m%d", localtime())+".log"
-        f_p_name = self.path + self.thatday
+        f_p_name = self.path + fname
         if os.path.isfile(f_p_name):
             file=open(f_p_name,'a+')
         else:

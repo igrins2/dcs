@@ -142,7 +142,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         self.log.send(self._iam, INFO, "DCS gui closing...")
 
-        self.producer.send_message(self._target, self.gui_q, CMD_EXIT)
+        self.producer.send_message(self.gui_q, CMD_EXIT)
 
         for th in threading.enumerate():
             self.log.send(self._iam, INFO, th.name + " exit.")
@@ -150,44 +150,43 @@ class MainWindow(Ui_Dialog, QMainWindow):
         if self.proc_core != None:
             self.proc_core.terminate()
 
-        if self.consumer != None:
-            self.consumer.stop_consumer()
-        self.producer.__del__()
-        self.consumer.__del__()
-
         self.log.send(self._iam, INFO, "DCS gui closed!")
+
+        if self.producer != None:
+            self.producer.__del__()
 
         return super().closeEvent(event)
 
 
     def connect_to_server_ex(self):
         # RabbitMQ connect
-        self.producer = MsgMiddleware(self._iam, "localhost", self.myid, self.pwd, self.gui_ex, "direct", True)
+        self.producer = MsgMiddleware(self._iam, "localhost", self.myid, self.pwd, self.gui_ex)
         self.producer.connect_to_server()
         self.producer.define_producer()
 
             
     def connect_to_server_q(self):
         # RabbitMQ connect
-        self.consumer = MsgMiddleware(self._iam, "localhost", self.myid, self.pwd, self.core_ex, "direct")
+        self.consumer = MsgMiddleware(self._iam, "localhost", self.myid, self.pwd, self.core_ex)
         self.consumer.connect_to_server()
         self.consumer.define_consumer(self.core_q, self.callback)
 
         th = threading.Thread(target=self.consumer.start_consumer)
+        th.daemon = True
         th.start() 
 
 
     def callback(self, ch, method, properties, body):
         cmd = body.decode()
-        msg = "receive: %s" % cmd
-        self.log.send(self._iam, INFO, msg)
+        #msg = "receive: %s" % cmd
+        #self.log.send(self._iam, INFO, msg)
 
         param = cmd.split()
 
         self.busy = False
 
         if param[0] == CMD_CORESTART:
-            self.producer.send_message(self._target, self.gui_q, CMD_VERSION)
+            self.producer.send_message(self.gui_q, CMD_VERSION)
 
         elif param[0] == CMD_VERSION:
             self.label_ver.setText(param[1])
@@ -426,7 +425,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.busy = True
 
         msg = "%s %s" % (CMD_INITIALIZE1, self.e_timeout.text())
-        self.producer.send_message(self._target, self.gui_q, msg)
+        self.producer.send_message(self.gui_q, msg)
 
 
     def initialize2(self):
@@ -435,7 +434,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
             return
         self.busy = True
 
-        self.producer.send_message(self._target, self.gui_q, CMD_INITIALIZE2)
+        self.producer.send_message(self.gui_q, CMD_INITIALIZE2)
 
 
     def reset(self):
@@ -444,7 +443,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
             return
         self.busy = True
 
-        self.producer.send_message(self._target, self.gui_q, CMD_RESET)
+        self.producer.send_message(self.gui_q, CMD_RESET)
 
 
     def downloadMCD(self):
@@ -453,7 +452,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
             return
         self.busy = True
 
-        self.producer.send_message(self._target, self.gui_q, CMD_DOWNLOAD)
+        self.producer.send_message(self.gui_q, CMD_DOWNLOAD)
 
 
     def set_detector(self):
@@ -463,7 +462,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.busy = True
 
         msg = "%s %d %s" % (CMD_SETDETECTOR, MUX_TYPE, self.cmb_ouput_channels.currentText())
-        self.producer.send_message(self._target, self.gui_q, msg)
+        self.producer.send_message(self.gui_q, msg)
 
 
     def err_count(self):
@@ -472,7 +471,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
             return
         self.busy = True
 
-        self.producer.send_message(self._target, self.gui_q, CMD_ERRCOUNT)
+        self.producer.send_message(self.gui_q, CMD_ERRCOUNT)
 
 
     def click_UTR(self):
@@ -557,7 +556,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
         ramps = int(self.e_ramps.text())
 
         msg = "%s %d" % (CMD_SETFSMODE, self.samplingMode)
-        self.producer.send_message(self._target, self.gui_q, msg)
+        self.producer.send_message(self.gui_q, msg)
 
         self.cal_waittime = 0.0
         if self.samplingMode == UTR_MODE:
@@ -567,7 +566,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
             self.cal_waittime = T_br + ((T_frame * resets) + self.expTime) * ramps
             
             msg = "%s %.3f %d %d %d %d %d" % (CMD_SETRAMPPARAM, self.expTime, resets, reads, groups, drops, ramps)
-            self.producer.send_message(self._target, self.gui_q, msg)
+            self.producer.send_message(self.gui_q, msg)
 
             str_exp_time = "%.3f" % self.expTime
             self.e_exp_time.setText(str_exp_time)     
@@ -598,7 +597,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
             self.cal_waittime = T_br + ((T_frame * resets) + fowlerTime + (2 * T_frame * reads)) * ramps
   
             msg = "%s %.3f %d %d %d %.3f %d" % (CMD_SETFSPARAM, self.expTime, resets, reads, groups, fowlerTime, ramps)
-            self.producer.send_message(self._target, self.gui_q, msg)
+            self.producer.send_message(self.gui_q, msg)
         
         str_caltime = "%.3f" % self.cal_waittime
         self.label_calculated_time.setText(str_caltime)
@@ -630,7 +629,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
             self.y_start = int(self.e_y_start.text())
             self.y_stop = int(self.e_y_stop.text())
             msg = "%s %d %d %d %d" % (CMD_SETWINPARAM, self.x_start, self.x_stop, self.y_start, self.y_stop)
-            self.producer.send_message(self._target, self.gui_q, msg)
+            self.producer.send_message(self.gui_q, msg)
         
         self.cur_cnt += 1
 
@@ -653,7 +652,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.elapsed_timer.start()
         
         msg = "%s %d" % (CMD_ACQUIRERAMP, self.chk_ROI_mode.isChecked())
-        self.producer.send_message(self._target, self.gui_q, msg)  
+        self.producer.send_message(self.gui_q, msg)  
         
         
     def show_progressbar(self):
@@ -684,12 +683,12 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.prog_timer.stop()
         self.elapsed_timer.stop()
         
-        self.producer.send_message(self._target, self.gui_q, CMD_STOPACQUISITION)
+        self.producer.send_message(self.gui_q, CMD_STOPACQUISITION)
 
 
     def show_fits(self):
         msg = "%s %d" % (CMD_SHOWFITS, self.chk_show_fits.isChecked())
-        self.producer.send_message(self._target, self.gui_q, msg)
+        self.producer.send_message(self.gui_q, msg)
 
         
     def use_saveAs(self):
@@ -725,7 +724,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
             return
         self.busy = True
 
-        self.producer.send_message(self._target, self.gui_q, CMD_GETTELEMETRY)
+        self.producer.send_message(self.gui_q, CMD_GETTELEMETRY)
 
 
     def find_dir_file(self, find_option):
@@ -774,7 +773,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
         _value = int("0x" + value, 16)
 
         msg = "%s %d %d" % (CMD_WRITEASICREG, _addr, _value)
-        self.producer.send_message(self._target, self.gui_q, msg)
+        self.producer.send_message(self.gui_q, msg)
         
 
 
@@ -785,7 +784,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
         _addr = int("0x" + addr, 16)
 
         msg = "%s %d" % (CMD_READASICREG, _addr)
-        self.producer.send_message(self._target, self.gui_q, msg)
+        self.producer.send_message(self.gui_q, msg)
 
         
 if __name__ == "__main__":

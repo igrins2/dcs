@@ -180,20 +180,8 @@ class DC(threading.Thread):
                 self.log.send(self._iam, INFO, th.name + " exit.")
 
         if self.gui:
-
-            if self.consumer_hk != None:
-                self.consumer_hk.stop_consumer()
-            self.consumer_hk.__del__()
-
-            if self.consumer_ics != None:
-                self.consumer_ics.stop_consumer()            
             self.producer_ics.__del__()
-            self.consumer_ics.__del__()
-
-            if self.consumer != None:
-                self.consumer.stop_consumer()
             self.producer.__del__()
-            self.consumer.__del__()
 
             self.log.send(self._iam, INFO, "DCS core closed!")
 
@@ -201,11 +189,12 @@ class DC(threading.Thread):
     #-------------------------------
     def connect_to_server_hk_q(self):
         # RabbitMQ connect
-        self.consumer_hk = MsgMiddleware(self.iam, self.ics_ip_addr, self.ics_id, self.ics_pwd, self.hk_sub_ex, "direct")      
+        self.consumer_hk = MsgMiddleware(IAM, self.ics_ip_addr, self.ics_id, self.ics_pwd, self.hk_sub_ex)      
         self.consumer_hk.connect_to_server()
         self.consumer_hk.define_consumer(self.hk_sub_q, self.callback_hk)
         
         th = threading.Thread(target=self.consumer_hk.start_consumer)
+        th.daemon = True
         th.start()        
 
     
@@ -233,18 +222,19 @@ class DC(threading.Thread):
     #-------------------------------
     def connect_to_server_ics_ex(self):
         # RabbitMQ connect        
-        self.producer_ics = MsgMiddleware(IAM, self.ics_ip_addr, self.ics_id, self.ics_pwd, self.dcs_ex, "direct", True)
+        self.producer_ics = MsgMiddleware(IAM, self.ics_ip_addr, self.ics_id, self.ics_pwd, self.dcs_ex)
         self.producer_ics.connect_to_server()
         self.producer_ics.define_producer()
 
 
     def connect_to_server_ics_q(self):
         # RabbitMQ connect
-        self.consumer_ics = MsgMiddleware(IAM, self.ics_ip_addr, self.ics_id, self.ics_pwd, self.ics_ex, "direct")
+        self.consumer_ics = MsgMiddleware(IAM, self.ics_ip_addr, self.ics_id, self.ics_pwd, self.ics_ex)
         self.consumer_ics.connect_to_server()
         self.consumer_ics.define_consumer(self.ics_q, self.callback_ics)
 
         th = threading.Thread(target=self.consumer_ics.start_consumer)
+        th.daemon = True
         th.start() 
 
 
@@ -263,7 +253,7 @@ class DC(threading.Thread):
         if self.simulation_mode:
             ti.sleep(1)
             msg = "%s %s OK" % (param[0], IAM)
-            self.producer_ics.send_message(TARGET, self.dcs_q, msg)
+            self.producer_ics.send_message(self.dcs_q, msg)
             
             msg = "send: %s" % msg
             self.log.send(IAM, INFO, msg)
@@ -274,7 +264,7 @@ class DC(threading.Thread):
             if self.init1:
                 param = cmd.split()
                 msg = "%s %s" % (ALIVE, IAM)
-                self.producer_ics.send_message(TARGET, self.dcs_q, msg)        
+                self.producer_ics.send_message(self.dcs_q, msg)        
                 
         elif param[0] == CMD_INITIALIZE2:
             self.Initialize2(True)
@@ -319,21 +309,22 @@ class DC(threading.Thread):
 
     def connect_to_server_ex(self):
         # RabbitMQ connect
-        self.producer = MsgMiddleware(self._iam, "localhost", self.myid, self.pwd, self.core_ex, "direct", True)
+        self.producer = MsgMiddleware(self._iam, "localhost", self.myid, self.pwd, self.core_ex)
         self.producer.connect_to_server()
         self.producer.define_producer()
 
 
     def connect_to_server_q(self):
         # RabbitMQ connect
-        self.consumer = MsgMiddleware(self._iam, "localhost", self.myid, self.pwd, self.gui_ex, "direct")
+        self.consumer = MsgMiddleware(self._iam, "localhost", self.myid, self.pwd, self.gui_ex)
         self.consumer.connect_to_server()
         self.consumer.define_consumer(self.gui_q, self.callback)
 
         th = threading.Thread(target=self.consumer.start_consumer)
+        th.daemon = True
         th.start() 
 
-        self.producer.send_message(self._target, self.core_q, CMD_CORESTART)
+        self.producer.send_message(self.core_q, CMD_CORESTART)
 
 
     def callback(self, ch, method, properties, body):
@@ -345,7 +336,7 @@ class DC(threading.Thread):
 
         if param[0] == CMD_VERSION:
             msg = "%s %s" % (CMD_VERSION, self.LibVersion())
-            self.producer.send_message(self._target, self.core_q, msg)
+            self.producer.send_message(self.core_q, msg)
 
         elif param[0] == CMD_SHOWFITS:
             self.showfits = bool(param[1])
@@ -408,7 +399,7 @@ class DC(threading.Thread):
             if res == MACIE_OK:
                 result = RET_OK
                 msg = "%s %s OK" % (CMD_WRITEASICREG, param[1])
-                self.producer.send_message(self._target, self.core_q, msg)
+                self.producer.send_message(self.core_q, msg)
             else:
                 result = RET_FAIL
             msg = "WriteASICReg %s - h%04x = %04x" % (result, int(param[1]), int(param[2]))
@@ -420,7 +411,7 @@ class DC(threading.Thread):
                 result = RET_OK
                 _value = val[0]
                 msg = "%s %s %d" % (CMD_READASICREG, param[1], _value)
-                self.producer.send_message(self._target, self.core_q, msg)
+                self.producer.send_message(self.core_q, msg)
             else:
                 result = RET_FAIL
                 _value = 0
@@ -586,10 +577,10 @@ class DC(threading.Thread):
 
         if ics:
             msg = "%s %s" % (CMD_INITIALIZE1, IAM)
-            self.producer_ics.send_message(TARGET, self.dcs_q, msg)
+            self.producer_ics.send_message(self.dcs_q, msg)
         else:
             msg = "%s %.2f %s OK" % (CMD_INITIALIZE1, lib.MACIE_LibVersion(), self.macieSN)
-            self.producer.send_message(self._target, self.core_q, msg)
+            self.producer.send_message(self.core_q, msg)
 
         self.init1 = True
 
@@ -653,9 +644,9 @@ class DC(threading.Thread):
 
         if ics:
             msg = "%s %s" % (CMD_INITIALIZE2, IAM)
-            self.producer_ics.send_message(TARGET, self.dcs_q, msg)
+            self.producer_ics.send_message(self.dcs_q, msg)
         else:    
-            self.producer.send_message(self._target, self.core_q, CMD_INITIALIZE2 + " OK")
+            self.producer.send_message(self.core_q, CMD_INITIALIZE2 + " OK")
 
         return True
 
@@ -680,9 +671,9 @@ class DC(threading.Thread):
 
         if ics:
             msg = "%s %s" % (CMD_RESET, IAM)
-            self.producer_ics.send_message(TARGET, self.dcs_q, msg)
+            self.producer_ics.send_message(self.dcs_q, msg)
         else:
-            self.producer.send_message(self._target, self.core_q, CMD_RESET + " OK")
+            self.producer.send_message(self.core_q, CMD_RESET + " OK")
 
         return True
         
@@ -707,9 +698,9 @@ class DC(threading.Thread):
 
         if ics:
             msg = "%s %s" % (CMD_DOWNLOAD, IAM)
-            self.producer_ics.send_message(TARGET, self.dcs_q, msg)
+            self.producer_ics.send_message( self.dcs_q, msg)
         else:
-            self.producer.send_message(self._target, self.core_q, CMD_DOWNLOAD + " OK")
+            self.producer.send_message(self.core_q, CMD_DOWNLOAD + " OK")
 
         return True
 
@@ -790,9 +781,9 @@ class DC(threading.Thread):
 
         if ics:
             msg = "%s %s OK" % (CMD_SETDETECTOR, IAM)
-            self.producer_ics.send_message(TARGET, self.dcs_q, msg)
+            self.producer_ics.send_message(self.dcs_q, msg)
         else:
-            self.producer.send_message(self._target, self.core_q, CMD_SETDETECTOR + " OK")
+            self.producer.send_message(self.core_q, CMD_SETDETECTOR + " OK")
 
         return True
 
@@ -816,9 +807,9 @@ class DC(threading.Thread):
 
         if ics:
             msg = "%s %s OK" % (CMD_ERRCOUNT, IAM)
-            self.producer_ics.send_message(TARGET, self.dcs_q, msg)
+            self.producer_ics.send_message(self.dcs_q, msg)
         else:
-            self.producer.send_message(self._target, self.core_q, CMD_ERRCOUNT + " OK")
+            self.producer.send_message(self.core_q, CMD_ERRCOUNT + " OK")
 
 
     def SetRampParam(self, p1, p2, p3, p4, p5, ics = False):  # p1~p5 : int
@@ -857,9 +848,9 @@ class DC(threading.Thread):
 
         if ics:
             msg = "%s %s OK" % (CMD_SETRAMPPARAM, IAM)
-            self.producer_ics.send_message(TARGET, self.dcs_q, msg)
+            self.producer_ics.send_message(self.dcs_q, msg)
         else:
-            self.producer.send_message(self._target, self.core_q, CMD_SETRAMPPARAM + " OK")
+            self.producer.send_message(self.core_q, CMD_SETRAMPPARAM + " OK")
 
         return True
 
@@ -912,9 +903,9 @@ class DC(threading.Thread):
 
         if ics:
             msg = "%s %s OK" % (CMD_SETFSPARAM, IAM)
-            self.producer_ics.send_message(TARGET, self.dcs_q, msg)
+            self.producer_ics.send_message(self.dcs_q, msg)
         else:
-            self.producer.send_message(self._target, self.core_q, CMD_SETFSPARAM + " OK")
+            self.producer.send_message(self.core_q, CMD_SETFSPARAM + " OK")
 
         return True
 
@@ -1093,9 +1084,9 @@ class DC(threading.Thread):
 
         if ics:
             msg = "%s %s OK" % (CMD_STOPACQUISITION, IAM)
-            self.producer_ics.send_message(TARGET, self.dcs_q, msg)
+            self.producer_ics.send_message(self.dcs_q, msg)
         else:
-            self.producer.send_message(self._target, self.core_q, CMD_STOPACQUISITION + " OK")
+            self.producer.send_message(self.core_q, CMD_STOPACQUISITION + " OK")
 
         return True
 
@@ -1170,9 +1161,9 @@ class DC(threading.Thread):
         
         if ics:
             msg = "%s %s OK" % (CMD_ACQUIRERAMP, IAM)
-            self.producer_ics.send_message(TARGET, self.dcs_q, msg)
+            self.producer_ics.send_message(self.dcs_q, msg)
         else:
-            self.producer.send_message(self._target, self.core_q, CMD_ACQUIRERAMP + " OK")        
+            self.producer.send_message(self.core_q, CMD_ACQUIRERAMP + " OK")        
 
         return True
 
@@ -1229,9 +1220,9 @@ class DC(threading.Thread):
 
         if ics:
             msg = "%s %s OK" % (CMD_ACQUIRERAMP, IAM)
-            self.producer_ics.send_message(TARGET, self.dcs_q, msg)
+            self.producer_ics.send_message(self.dcs_q, msg)
         else:
-            self.producer.send_message(self._target, self.core_q, CMD_ACQUIRERAMP + " OK")
+            self.producer.send_message(self.core_q, CMD_ACQUIRERAMP + " OK")
 
         return True
 
@@ -1289,10 +1280,10 @@ class DC(threading.Thread):
 
             measured_durationT = ti.time() - self.measured_startT
             msg = "%s %.3f %s" % (CMD_MEASURETIME, measured_durationT, filename)
-            self.producer.send_message(self._target, self.core_q, msg)
+            self.producer.send_message(self.core_q, msg)
 
             if self.showfits and self.ramps == 1 and self.groups == 1 and self.reads == 1:
-                ds9 = WORKING_DIR + '/DCS/ds9'
+                ds9 = WORKING_DIR + 'DCS/ds9'
                 #subprocess.run([ds9, '-b', filename, '-o', 'newfile'], shell = True)
                 subprocess.Popen([ds9, filename])
 
@@ -1385,10 +1376,10 @@ class DC(threading.Thread):
         
         measured_durationT = ti.time() - self.measured_startT
         msg = "%s %.3f %s" % (CMD_MEASURETIME, measured_durationT, path + "Result/" + filename)
-        self.producer.send_message(self._target, self.core_q, msg)
+        self.producer.send_message(self.core_q, msg)
 
         if self.showfits:
-            ds9 = WORKING_DIR + '/DCS/ds9'
+            ds9 = WORKING_DIR + 'DCS/ds9'
             #subprocess.run([ds9, '-b', lastfilename, '-o', 'newfile'], shell = True)
             #subprocess.run([ds9, filename], shell = True)
             resfile = "%sResult/%s" % (path, filename)
