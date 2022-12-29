@@ -58,6 +58,20 @@ class MACIE_FitsHdr(Structure):
 lib.MACIE_WriteFitsFile.argtypes = [c_char_p, c_ushort, c_ushort, POINTER(c_ushort), c_ushort, POINTER(MACIE_FitsHdr)]
 lib.MACIE_WriteFitsFile.restype = c_int
 
+FieldNames = [('date', str), ('time', str),
+              ('pressure', float),
+              ('bench', float), ('bench_tc', float),
+              ('grating', float), ('grating_tc', float),
+              ('detS', float), ('detS_tc', float),
+              ('detK', float), ('detK_tc', float),
+              ('camH', float),
+              ('detH', float), ('detH_tc', float),
+              ('benchcenter', float), ('coldhead01', float), 
+              ('coldhead02', float), ('coldstop', float), 
+              ('charcoalBox', float), ('camK', float), 
+              ('shieldtop', float), ('air', float), 
+              ('alert_status', str)]
+
 class DC(threading.Thread):
     def __init__(self, gui=False):
 
@@ -149,7 +163,7 @@ class DC(threading.Thread):
 
         self.showfits = False
 
-        self.init1 = True  #for ics
+        self.init1 = False  #for ics
 
         self.simulation_mode = False
 
@@ -194,7 +208,7 @@ class DC(threading.Thread):
         self.consumer_hk.define_consumer(self.hk_sub_q, self.callback_hk)
         
         th = threading.Thread(target=self.consumer_hk.start_consumer)
-        th.daemon = True
+        #th.daemon = True
         th.start()        
 
     
@@ -209,7 +223,7 @@ class DC(threading.Thread):
             return
         
         msg = "receive: %s" % cmd
-        self.log.send(self.iam, INFO, msg)
+        self.log.send(self._iam, INFO, msg)
 
         if param[0] == HK_REQ_UPLOAD_DB:
             HK_list = param[2:]
@@ -234,7 +248,7 @@ class DC(threading.Thread):
         self.consumer_ics.define_consumer(self.ics_q, self.callback_ics)
 
         th = threading.Thread(target=self.consumer_ics.start_consumer)
-        th.daemon = True
+        #th.daemon = True
         th.start() 
 
 
@@ -252,7 +266,12 @@ class DC(threading.Thread):
 
         if self.simulation_mode:
             ti.sleep(1)
-            msg = "%s %s OK" % (param[0], IAM)
+
+            _t = datetime.datetime.utcnow()
+            cur_datetime = [_t.year, _t.month, _t.day, _t.hour, _t.minute, _t.second, _t.microsecond]
+            folder_name = "%04d%02d%02d_%02d%02d%02d" % (cur_datetime[0], cur_datetime[1], cur_datetime[2], cur_datetime[3], cur_datetime[4], cur_datetime[5])
+
+            msg = "%s %s %s" % (param[0], IAM, folder_name)
             self.producer_ics.send_message(self.dcs_q, msg)
             
             msg = "send: %s" % msg
@@ -260,8 +279,11 @@ class DC(threading.Thread):
             
             return
 
+        if self.init1 is False:
+            return
+
         if param[0] == ALIVE:
-            if self.init1:
+            if self.init1 and self.handle != 0:
                 param = cmd.split()
                 msg = "%s %s" % (ALIVE, IAM)
                 self.producer_ics.send_message(self.dcs_q, msg)        
@@ -321,7 +343,7 @@ class DC(threading.Thread):
         self.consumer.define_consumer(self.gui_q, self.callback)
 
         th = threading.Thread(target=self.consumer.start_consumer)
-        th.daemon = True
+        #th.daemon = True
         th.start() 
 
         self.producer.send_message(self.core_q, CMD_CORESTART)
@@ -398,7 +420,7 @@ class DC(threading.Thread):
             res = self.write_ASIC_reg(int(param[1]), int(param[2]))
             if res == MACIE_OK:
                 result = RET_OK
-                msg = "%s %s OK" % (CMD_WRITEASICREG, param[1])
+                msg = "%s %s" % (CMD_WRITEASICREG, param[1])
                 self.producer.send_message(self.core_q, msg)
             else:
                 result = RET_FAIL
@@ -579,7 +601,7 @@ class DC(threading.Thread):
             msg = "%s %s" % (CMD_INITIALIZE1, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
         else:
-            msg = "%s %.2f %s OK" % (CMD_INITIALIZE1, lib.MACIE_LibVersion(), self.macieSN)
+            msg = "%s %.2f %s" % (CMD_INITIALIZE1, lib.MACIE_LibVersion(), self.macieSN)
             self.producer.send_message(self.core_q, msg)
 
         self.init1 = True
@@ -646,7 +668,7 @@ class DC(threading.Thread):
             msg = "%s %s" % (CMD_INITIALIZE2, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
         else:    
-            self.producer.send_message(self.core_q, CMD_INITIALIZE2 + " OK")
+            self.producer.send_message(self.core_q, CMD_INITIALIZE2)
 
         return True
 
@@ -673,7 +695,7 @@ class DC(threading.Thread):
             msg = "%s %s" % (CMD_RESET, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
         else:
-            self.producer.send_message(self.core_q, CMD_RESET + " OK")
+            self.producer.send_message(self.core_q, CMD_RESET)
 
         return True
         
@@ -700,7 +722,7 @@ class DC(threading.Thread):
             msg = "%s %s" % (CMD_DOWNLOAD, IAM)
             self.producer_ics.send_message( self.dcs_q, msg)
         else:
-            self.producer.send_message(self.core_q, CMD_DOWNLOAD + " OK")
+            self.producer.send_message(self.core_q, CMD_DOWNLOAD)
 
         return True
 
@@ -780,10 +802,10 @@ class DC(threading.Thread):
         self.log.send(self._iam, INFO, msg)
 
         if ics:
-            msg = "%s %s OK" % (CMD_SETDETECTOR, IAM)
+            msg = "%s %s" % (CMD_SETDETECTOR, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
         else:
-            self.producer.send_message(self.core_q, CMD_SETDETECTOR + " OK")
+            self.producer.send_message(self.core_q, CMD_SETDETECTOR)
 
         return True
 
@@ -806,10 +828,10 @@ class DC(threading.Thread):
                 self.log.send(self._iam, INFO, msg)
 
         if ics:
-            msg = "%s %s OK" % (CMD_ERRCOUNT, IAM)
+            msg = "%s %s" % (CMD_ERRCOUNT, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
         else:
-            self.producer.send_message(self.core_q, CMD_ERRCOUNT + " OK")
+            self.producer.send_message(self.core_q, CMD_ERRCOUNT)
 
 
     def SetRampParam(self, p1, p2, p3, p4, p5, ics = False):  # p1~p5 : int
@@ -847,10 +869,10 @@ class DC(threading.Thread):
         self.log.send(self._iam, INFO, msg)
 
         if ics:
-            msg = "%s %s OK" % (CMD_SETRAMPPARAM, IAM)
+            msg = "%s %s" % (CMD_SETRAMPPARAM, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
         else:
-            self.producer.send_message(self.core_q, CMD_SETRAMPPARAM + " OK")
+            self.producer.send_message(self.core_q, CMD_SETRAMPPARAM)
 
         return True
 
@@ -902,10 +924,10 @@ class DC(threading.Thread):
         self.log.send(self._iam, INFO, msg)
 
         if ics:
-            msg = "%s %s OK" % (CMD_SETFSPARAM, IAM)
+            msg = "%s %s" % (CMD_SETFSPARAM, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
         else:
-            self.producer.send_message(self.core_q, CMD_SETFSPARAM + " OK")
+            self.producer.send_message(self.core_q, CMD_SETFSPARAM)
 
         return True
 
@@ -1083,10 +1105,10 @@ class DC(threading.Thread):
         self.log.send(self._iam, INFO, "Acquire Stop " + RET_OK)
 
         if ics:
-            msg = "%s %s OK" % (CMD_STOPACQUISITION, IAM)
+            msg = "%s %s" % (CMD_STOPACQUISITION, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
         else:
-            self.producer.send_message(self.core_q, CMD_STOPACQUISITION + " OK")
+            self.producer.send_message(self.core_q, CMD_STOPACQUISITION)
 
         return True
 
@@ -1157,13 +1179,13 @@ class DC(threading.Thread):
 
         lib.MACIE_CloseGigeScienceInterface(self.handle, self.slctMACIEs)
 
-        self.WriteFitsFile()
+        folder_name = self.WriteFitsFile()
         
         if ics:
-            msg = "%s %s OK" % (CMD_ACQUIRERAMP, IAM)
+            msg = "%s %s %s" % (CMD_ACQUIRERAMP, IAM, folder_name)
             self.producer_ics.send_message(self.dcs_q, msg)
         else:
-            self.producer.send_message(self.core_q, CMD_ACQUIRERAMP + " OK")        
+            self.producer.send_message(self.core_q, CMD_ACQUIRERAMP)        
 
         return True
 
@@ -1216,13 +1238,13 @@ class DC(threading.Thread):
 
         lib.MACIE_CloseGigeScienceInterface(self.handle, self.slctMACIEs)
 
-        self.WriteFitsFile_window()
+        foldername = self.WriteFitsFile_window()
 
         if ics:
-            msg = "%s %s OK" % (CMD_ACQUIRERAMP, IAM)
+            msg = "%s %s %s" % (CMD_ACQUIRERAMP, IAM, foldername)
             self.producer_ics.send_message(self.dcs_q, msg)
         else:
-            self.producer.send_message(self.core_q, CMD_ACQUIRERAMP + " OK")
+            self.producer.send_message(self.core_q, CMD_ACQUIRERAMP)
 
         return True
 
@@ -1235,6 +1257,7 @@ class DC(threading.Thread):
             self.log.send(self._iam, WARNING, "Error: Creating directory. " + dir)
 
 
+        
     def WriteFitsFile(self):
         self.log.send(self._iam, INFO, "Write Fits file now....")
 
@@ -1256,8 +1279,8 @@ class DC(threading.Thread):
         self.createFolder(path)
 
         #str = time.strftime("%Y%m%d_%H%M%S", time.localtime(time.time()))
-        str = "%04d%02d%02d_%02d%02d%02d" % (cur_datetime[0], cur_datetime[1], cur_datetime[2], cur_datetime[3], cur_datetime[4], cur_datetime[5])
-        path += str + "/"
+        folder_name = "%04d%02d%02d_%02d%02d%02d" % (cur_datetime[0], cur_datetime[1], cur_datetime[2], cur_datetime[3], cur_datetime[4], cur_datetime[5])
+        path += folder_name + "/"
         self.createFolder(path)
 
         idx = 0
@@ -1385,6 +1408,8 @@ class DC(threading.Thread):
             resfile = "%sResult/%s" % (path, filename)
             subprocess.Popen([ds9, resfile])
 
+        return folder_name
+
     
     def WriteFitsFile_window(self):
         self.log.send(self._iam, INFO, "Write Fits file now (ROI)....")
@@ -1400,8 +1425,8 @@ class DC(threading.Thread):
         self.createFolder(path)
 
         #str = time.strftime("%Y%m%d_%H%M%S", time.localtime(time.time()))
-        str = "%04d%02d%02d_%02d%02d%02d" % (cur_datetime[0], cur_datetime[1], cur_datetime[2], cur_datetime[3], cur_datetime[4], cur_datetime[5])
-        path += str + "/"
+        folder_name = "%04d%02d%02d_%02d%02d%02d" % (cur_datetime[0], cur_datetime[1], cur_datetime[2], cur_datetime[3], cur_datetime[4], cur_datetime[5])
+        path += folder_name + "/"
         self.createFolder(path)
 
         filename = "%sH2RG_R01_M01_N01.fits" % path
@@ -1413,6 +1438,8 @@ class DC(threading.Thread):
         else:
             self.log.send(self._iam, INFO, filename)
 
+        return folder_name
+            
 
 
     def save_fitsfile_sub(self, idx, filename, cur_datetime, ramp, group, read):
