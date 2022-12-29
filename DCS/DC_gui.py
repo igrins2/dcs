@@ -178,8 +178,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
     def callback(self, ch, method, properties, body):
         cmd = body.decode()
-        msg = "receive: %s" % cmd
-        self.log.send(self._iam, INFO, msg)
+        #msg = "receive: %s" % cmd
+        #self.log.send(self._iam, INFO, msg)
 
         param = cmd.split()
 
@@ -187,7 +187,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
         if param[0] == CMD_CORESTART:
             self.producer.send_message(self.gui_q, CMD_VERSION)
-            
+
         elif param[0] == CMD_VERSION:
             self.label_ver.setText(param[1])
 
