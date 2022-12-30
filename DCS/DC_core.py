@@ -3,7 +3,7 @@
 """
 Created on Mar 4, 2022
 
-Modified on Dec 15, 2022
+Modified on Dec 30, 2022
 
 @author: hilee
 """
@@ -95,8 +95,10 @@ class DC(threading.Thread):
         self.ics_id = cfg.get('ICS', 'id')
         self.ics_pwd = cfg.get('ICS', 'pwd')
 
-        self.hk_sub_ex = cfg.get('ICS', "hk_sub_exchange")     
-        self.hk_sub_q = cfg.get('ICS', "hk_sub_routing_key")
+        self.dcs_hk_ex = cfg.get('ICS', "dcs_hk_exchange")     
+        self.dcs_hk_q = cfg.get('ICS', "dcs_hk_routing_key")
+        self.hk_dcs_ex = cfg.get('ICS', "hk_dcs_exchange")     
+        self.hk_dcs_q = cfg.get('ICS', "hk_dcs_routing_key")
 
         # exchange - queue for ICS
         self.ics_ex = cfg.get('ICS', 'ics_exchange')
@@ -173,9 +175,11 @@ class DC(threading.Thread):
         self.producer = None
         self.consumer = None
 
+        self.producer_hk = None
         self.consumer_hk = None
 
         if self.gui:
+            self.connect_to_server_hk_ex()
             self.connect_to_server_hk_q()
 
             self.connect_to_server_ics_ex()
@@ -201,11 +205,18 @@ class DC(threading.Thread):
 
 
     #-------------------------------
+    def connect_to_server_hk_ex(self):
+        # RabbitMQ connect        
+        self.producer_hk = MsgMiddleware(IAM, self.ics_ip_addr, self.ics_id, self.ics_pwd, self.dcs_hk_ex)
+        self.producer_hk.connect_to_server()
+        self.producer_hk.define_producer()
+
+
     def connect_to_server_hk_q(self):
         # RabbitMQ connect
-        self.consumer_hk = MsgMiddleware(IAM, self.ics_ip_addr, self.ics_id, self.ics_pwd, self.hk_sub_ex)      
+        self.consumer_hk = MsgMiddleware(IAM, self.ics_ip_addr, self.ics_id, self.ics_pwd, self.hk_dcs_ex)      
         self.consumer_hk.connect_to_server()
-        self.consumer_hk.define_consumer(self.hk_sub_q, self.callback_hk)
+        self.consumer_hk.define_consumer(self.hk_dcs_q, self.callback_hk)
         
         th = threading.Thread(target=self.consumer_hk.start_consumer)
         #th.daemon = True
@@ -262,7 +273,7 @@ class DC(threading.Thread):
         msg = "receive: %s" % cmd
         self.log.send(IAM, INFO, msg)
 
-        self.simulation_mode = bool(param[2])
+        self.simulation_mode = bool(int(param[2]))
 
         if self.simulation_mode:
             ti.sleep(1)
@@ -280,12 +291,14 @@ class DC(threading.Thread):
             return
 
         if self.init1 is False:
+            msg = "%s %s TRY" % (param[0], IAM)
+            self.producer_ics.send_message(self.dcs_q, msg)
             return
 
         if param[0] == ALIVE:
             if self.init1 and self.handle != 0:
                 param = cmd.split()
-                msg = "%s %s" % (ALIVE, IAM)
+                msg = "%s %s OK" % (ALIVE, IAM)
                 self.producer_ics.send_message(self.dcs_q, msg)        
                 
         elif param[0] == CMD_INITIALIZE2:
@@ -298,28 +311,25 @@ class DC(threading.Thread):
             self.DownloadMCD(True)
         
         elif param[0] == CMD_SETDETECTOR:
-            self.SetDetector(int(param[2]), int(param[3]))
+            self.SetDetector(int(param[3]), int(param[4]), True)
             #self.err_count() ??
         
         elif param[0] == CMD_SETFSMODE:
-            self.samplingMode = int(param[2])
+            self.samplingMode = int(param[3])
 
-        elif param[0] == CMD_SETWINPARAM:
-            self.x_start = int(param[2])
-            self.x_stop = int(param[3])
-            self.y_start = int(param[4])
-            self.y_stop = int(param[5])
-    
         elif param[0] == CMD_SETFSPARAM:
-            self.SetFSParam(int(param[2]), int(param[3]), int(param[4]), float(param[5]), int(param[6]))
+            self.expTime = float(param[3])
+            self.SetFSParam(int(param[4]), int(param[5]), int(param[6]), float(param[7]), int(param[8]), True)
 
         elif param[0] == CMD_ACQUIRERAMP:
-            if param[2] == "0":
-                self.AcquireRamp()
-                self.ImageAcquisition()
-            else:
-                self.AcquireRamp_window()
-                self.ImageAcquisition_window()
+            #msg = "%s %s" % (CMD_REQ_TEMP, IAM)
+            #self.producer_hk.send_message(self.dcs_hk_q, msg)
+
+            self.AcquireRamp()
+            self.ImageAcquisition(True)
+            #else:
+            #    self.AcquireRamp_window()
+            #    self.ImageAcquisition_window(True)
 
         elif param[0] == CMD_STOPACQUISITION:
             self.StopAcquisition(True)
@@ -597,12 +607,12 @@ class DC(threading.Thread):
 
         self.log.send(self._iam, INFO, "Initialize " + RET_OK)
 
-        if ics:
-            msg = "%s %s" % (CMD_INITIALIZE1, IAM)
-            self.producer_ics.send_message(self.dcs_q, msg)
-        else:
-            msg = "%s %.2f %s" % (CMD_INITIALIZE1, lib.MACIE_LibVersion(), self.macieSN)
-            self.producer.send_message(self.core_q, msg)
+        
+        msg = "%s %s OK" % (CMD_INITIALIZE1, IAM)
+        self.producer_ics.send_message(self.dcs_q, msg)
+        
+        msg = "%s %.2f %s" % (CMD_INITIALIZE1, lib.MACIE_LibVersion(), self.macieSN)
+        self.producer.send_message(self.core_q, msg)
 
         self.init1 = True
 
@@ -665,7 +675,7 @@ class DC(threading.Thread):
         self.log.send(self._iam, INFO, "Initialize2 " + RET_OK)
 
         if ics:
-            msg = "%s %s" % (CMD_INITIALIZE2, IAM)
+            msg = "%s %s OK" % (CMD_INITIALIZE2, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
         else:    
             self.producer.send_message(self.core_q, CMD_INITIALIZE2)
@@ -692,7 +702,7 @@ class DC(threading.Thread):
         self.log.send(self._iam, INFO, "ResetASIC " + RET_OK)
 
         if ics:
-            msg = "%s %s" % (CMD_RESET, IAM)
+            msg = "%s %s OK" % (CMD_RESET, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
         else:
             self.producer.send_message(self.core_q, CMD_RESET)
@@ -719,7 +729,7 @@ class DC(threading.Thread):
         self.log.send(self._iam, INFO, "DownloadMCD " + RET_OK)
 
         if ics:
-            msg = "%s %s" % (CMD_DOWNLOAD, IAM)
+            msg = "%s %s OK" % (CMD_DOWNLOAD, IAM)
             self.producer_ics.send_message( self.dcs_q, msg)
         else:
             self.producer.send_message(self.core_q, CMD_DOWNLOAD)
@@ -802,7 +812,7 @@ class DC(threading.Thread):
         self.log.send(self._iam, INFO, msg)
 
         if ics:
-            msg = "%s %s" % (CMD_SETDETECTOR, IAM)
+            msg = "%s %s OK" % (CMD_SETDETECTOR, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
         else:
             self.producer.send_message(self.core_q, CMD_SETDETECTOR)
@@ -828,7 +838,7 @@ class DC(threading.Thread):
                 self.log.send(self._iam, INFO, msg)
 
         if ics:
-            msg = "%s %s" % (CMD_ERRCOUNT, IAM)
+            msg = "%s %s OK" % (CMD_ERRCOUNT, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
         else:
             self.producer.send_message(self.core_q, CMD_ERRCOUNT)
@@ -869,7 +879,7 @@ class DC(threading.Thread):
         self.log.send(self._iam, INFO, msg)
 
         if ics:
-            msg = "%s %s" % (CMD_SETRAMPPARAM, IAM)
+            msg = "%s %s OK" % (CMD_SETRAMPPARAM, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
         else:
             self.producer.send_message(self.core_q, CMD_SETRAMPPARAM)
@@ -924,7 +934,7 @@ class DC(threading.Thread):
         self.log.send(self._iam, INFO, msg)
 
         if ics:
-            msg = "%s %s" % (CMD_SETFSPARAM, IAM)
+            msg = "%s %s OK" % (CMD_SETFSPARAM, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
         else:
             self.producer.send_message(self.core_q, CMD_SETFSPARAM)
@@ -1105,7 +1115,7 @@ class DC(threading.Thread):
         self.log.send(self._iam, INFO, "Acquire Stop " + RET_OK)
 
         if ics:
-            msg = "%s %s" % (CMD_STOPACQUISITION, IAM)
+            msg = "%s %s OK" % (CMD_STOPACQUISITION, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
         else:
             self.producer.send_message(self.core_q, CMD_STOPACQUISITION)
@@ -1179,7 +1189,7 @@ class DC(threading.Thread):
 
         lib.MACIE_CloseGigeScienceInterface(self.handle, self.slctMACIEs)
 
-        folder_name = self.WriteFitsFile()
+        folder_name = self.WriteFitsFile(ics)
         
         if ics:
             msg = "%s %s %s" % (CMD_ACQUIRERAMP, IAM, folder_name)
@@ -1258,7 +1268,7 @@ class DC(threading.Thread):
 
 
         
-    def WriteFitsFile(self):
+    def WriteFitsFile(self, ics):
         self.log.send(self._iam, INFO, "Write Fits file now....")
 
         _t = datetime.datetime.utcnow()
@@ -1291,7 +1301,7 @@ class DC(threading.Thread):
                     for read in range(self.reads):
 
                         filename = "%sH2RG_R%02d_M%02d_N%02d.fits" % (path, ramp + 1, group+1, read + 1)
-                        sts = self.save_fitsfile_sub(idx, filename, cur_datetime, ramp+1, group+1, read+1)
+                        sts = self.save_fitsfile_sub(idx, filename, cur_datetime, ramp+1, group+1, read+1, ics)
 
                         if sts != MACIE_OK:
                             self.log.send(self._iam, ERROR, self.GetErrMsg())
@@ -1315,7 +1325,7 @@ class DC(threading.Thread):
         elif self.samplingMode == CDS_MODE:  # ramp=1, group=1, read=1
             for read in range(self.reads*2):
                 filename = "%sH2RG_R01_M01_N%02d.fits" % (path, read + 1)
-                sts = self.save_fitsfile_sub(idx, filename, cur_datetime, 1, 1, read+1)
+                sts = self.save_fitsfile_sub(idx, filename, cur_datetime, 1, 1, read+1, ics)
 
                 if sts != MACIE_OK:
                     self.log.send(self._iam, ERROR, self.GetErrMsg())
@@ -1329,7 +1339,7 @@ class DC(threading.Thread):
             for ramp in range(self.ramps):
                 for read in range(self.reads*2):
                     filename = "%sH2RG_R%02d_M01_N%02d.fits" % (path, ramp + 1, read + 1)
-                    sts = self.save_fitsfile_sub(idx, filename, cur_datetime, ramp + 1, 1, read+1)
+                    sts = self.save_fitsfile_sub(idx, filename, cur_datetime, ramp + 1, 1, read+1, ics)
 
                     if sts != MACIE_OK:
                         self.log.send(self._iam, ERROR, self.GetErrMsg())
@@ -1343,7 +1353,7 @@ class DC(threading.Thread):
             for group in range(2):
                 for read in range(self.reads):
                     filename = "%sH2RG_R01_M%02d_N%02d.fits" % (path, group+1, read + 1)
-                    sts = self.save_fitsfile_sub(idx, filename, cur_datetime, 1, group+1, read+1)
+                    sts = self.save_fitsfile_sub(idx, filename, cur_datetime, 1, group+1, read+1, ics)
 
                     if sts != MACIE_OK:
                         self.log.send(self._iam, ERROR, self.GetErrMsg())
@@ -1442,7 +1452,7 @@ class DC(threading.Thread):
             
 
 
-    def save_fitsfile_sub(self, idx, filename, cur_datetime, ramp, group, read):
+    def save_fitsfile_sub(self, idx, filename, cur_datetime, ramp, group, read, ics):
         
         header_array = MACIE_FitsHdr * FITS_HDR_CNT
         pHeaders = header_array()
@@ -1527,51 +1537,52 @@ class DC(threading.Thread):
 
         #-------------------------------------------------------------------------------------
         #temperature
-        pressure = "%.2e" % self.hk_dict["pressure"]
-        pHeaders[header_cnt] = MACIE_FitsHdr(key="T_PRESSU".encode(), valType=HDR_STR, sVal=pressure.encode(), comment="Dewar Vacuum Pressure".encode())
-        header_cnt += 1
+        if ics:
+            pressure = "%.2e" % self.hk_dict["pressure"]
+            pHeaders[header_cnt] = MACIE_FitsHdr(key="T_PRESSU".encode(), valType=HDR_STR, sVal=pressure.encode(), comment="Dewar Vacuum Pressure".encode())
+            header_cnt += 1
 
-        pHeaders[header_cnt] = MACIE_FitsHdr(key="T_BENCH".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["bench"], comment="Dewar Temp. Optical Bench".encode())
-        header_cnt += 1
+            pHeaders[header_cnt] = MACIE_FitsHdr(key="T_BENCH".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["bench"], comment="Dewar Temp. Optical Bench".encode())
+            header_cnt += 1
 
-        pHeaders[header_cnt] = MACIE_FitsHdr(key="T_GRATIN".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["grating"], comment="Dewar Temp. Immersion Grating".encode())
-        header_cnt += 1        
+            pHeaders[header_cnt] = MACIE_FitsHdr(key="T_GRATIN".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["grating"], comment="Dewar Temp. Immersion Grating".encode())
+            header_cnt += 1        
 
-        pHeaders[header_cnt] = MACIE_FitsHdr(key="T_DETS".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["detS"], comment="Dewar Temp. Det S".encode())
-        header_cnt += 1
+            pHeaders[header_cnt] = MACIE_FitsHdr(key="T_DETS".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["detS"], comment="Dewar Temp. Det S".encode())
+            header_cnt += 1
 
-        pHeaders[header_cnt] = MACIE_FitsHdr(key="T_DETK".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["detK"], comment="Dewar Temp. Det K".encode())
-        header_cnt += 1
+            pHeaders[header_cnt] = MACIE_FitsHdr(key="T_DETK".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["detK"], comment="Dewar Temp. Det K".encode())
+            header_cnt += 1
 
-        pHeaders[header_cnt] = MACIE_FitsHdr(key="T_CAMH".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["camH"], comment="Dewar Temp. Cam H".encode())
-        header_cnt += 1
+            pHeaders[header_cnt] = MACIE_FitsHdr(key="T_CAMH".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["camH"], comment="Dewar Temp. Cam H".encode())
+            header_cnt += 1
 
-        pHeaders[header_cnt] = MACIE_FitsHdr(key="T_DETH".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["detH"], comment="Dewar Temp. Det H".encode())
-        header_cnt += 1
+            pHeaders[header_cnt] = MACIE_FitsHdr(key="T_DETH".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["detH"], comment="Dewar Temp. Det H".encode())
+            header_cnt += 1
 
-        pHeaders[header_cnt] = MACIE_FitsHdr(key="T_BENCEN".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["benchcenter"], comment="Dewar Temp. Bench center".encode())
-        header_cnt += 1
+            pHeaders[header_cnt] = MACIE_FitsHdr(key="T_BENCEN".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["benchcenter"], comment="Dewar Temp. Bench center".encode())
+            header_cnt += 1
 
-        pHeaders[header_cnt] = MACIE_FitsHdr(key="T_COLDH1".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["coldhead01"], comment="Dewar Temp. 1st ColdHead".encode())
-        header_cnt += 1
+            pHeaders[header_cnt] = MACIE_FitsHdr(key="T_COLDH1".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["coldhead01"], comment="Dewar Temp. 1st ColdHead".encode())
+            header_cnt += 1
 
-        pHeaders[header_cnt] = MACIE_FitsHdr(key="T_COLDH2".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["coldhead02"], comment="Dewar Temp. 2nd ColdHead".encode())
-        header_cnt += 1
-        
-        pHeaders[header_cnt] = MACIE_FitsHdr(key="T_COLDST".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["coldstop"], comment="Dewar Temp. Cold stop".encode())
-        header_cnt += 1
+            pHeaders[header_cnt] = MACIE_FitsHdr(key="T_COLDH2".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["coldhead02"], comment="Dewar Temp. 2nd ColdHead".encode())
+            header_cnt += 1
+            
+            pHeaders[header_cnt] = MACIE_FitsHdr(key="T_COLDST".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["coldstop"], comment="Dewar Temp. Cold stop".encode())
+            header_cnt += 1
 
-        pHeaders[header_cnt] = MACIE_FitsHdr(key="T_CARBOX".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["charcoalBox"], comment="Dewar Temp. Charcoal Box".encode())
-        header_cnt += 1
+            pHeaders[header_cnt] = MACIE_FitsHdr(key="T_CARBOX".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["charcoalBox"], comment="Dewar Temp. Charcoal Box".encode())
+            header_cnt += 1
 
-        pHeaders[header_cnt] = MACIE_FitsHdr(key="T_CAMK".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["camK"], comment="Dewar Temp. Cam K".encode())
-        header_cnt += 1
+            pHeaders[header_cnt] = MACIE_FitsHdr(key="T_CAMK".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["camK"], comment="Dewar Temp. Cam K".encode())
+            header_cnt += 1
 
-        pHeaders[header_cnt] = MACIE_FitsHdr(key="T_SHTOP".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["shieldtop"], comment="Dewar Temp. Rad. Shield".encode())
-        header_cnt += 1
+            pHeaders[header_cnt] = MACIE_FitsHdr(key="T_SHTOP".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["shieldtop"], comment="Dewar Temp. Rad. Shield".encode())
+            header_cnt += 1
 
-        pHeaders[header_cnt] = MACIE_FitsHdr(key="T_AIR".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["air"], comment="Dewar Temp. Rack Ambient".encode())
-        header_cnt += 1
+            pHeaders[header_cnt] = MACIE_FitsHdr(key="T_AIR".encode(), valType=HDR_FLOAT, fVal=self.hk_dict["air"], comment="Dewar Temp. Rack Ambient".encode())
+            header_cnt += 1
 
         #-------------------------------------------------------------------------------------
         
