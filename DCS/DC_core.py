@@ -324,7 +324,7 @@ class DC(threading.Thread):
 
         elif param[0] == CMD_ACQUIRERAMP:
             self.AcquireRamp()
-            self.ImageAcquisition()
+            self.ImageAcquisition(True)
 
         elif param[0] == CMD_STOPACQUISITION:
             self.StopAcquisition(True)
@@ -411,7 +411,7 @@ class DC(threading.Thread):
         elif param[0] == CMD_ACQUIRERAMP:
             if param[1] == "0":
                 self.AcquireRamp()
-                self.ImageAcquisition()
+                self.ImageAcquisition(True)
             else:
                 self.AcquireRamp_window()
                 self.ImageAcquisition_window()
