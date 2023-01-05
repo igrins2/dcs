@@ -97,11 +97,11 @@ def start():
             try:
                 if args[1] == "-h" or args[1] == "--help":
                     show_subfunc(args[0], _args, "timeout: milisecond (default is 200ms)")
-                elif int(args[1]) < 0:
+                elif int(args[1]) < 1:
                     show_errmsg(_args)
                 else:
                     ret = dc.Initialize(int(args[1]))
-                    print("result:", ret)
+                    #print("result:", ret)
                     if ret != True:
                         show_checkmsg(dc)
             except:
@@ -112,7 +112,7 @@ def start():
                 show_noargs(args[0])
             else:
                 ret = dc.Initialize2()
-                print("result:", ret)
+                #print("result:", ret)
                 if ret == False:
                     show_checkmsg(dc)
 

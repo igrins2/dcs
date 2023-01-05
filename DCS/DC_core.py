@@ -75,7 +75,7 @@ FieldNames = [('date', str), ('time', str),
 class DC(threading.Thread):
     def __init__(self, gui=False):
 
-        self.gui = bool(gui)
+        self.gui = gui
         
         self.log = LOG(WORKING_DIR + "DCS")
 
@@ -316,20 +316,15 @@ class DC(threading.Thread):
         
         elif param[0] == CMD_SETFSMODE:
             self.samplingMode = int(param[3])
+            #self.log.send(IAM, INFO, param[3])
 
         elif param[0] == CMD_SETFSPARAM:
             self.expTime = float(param[3])
             self.SetFSParam(int(param[4]), int(param[5]), int(param[6]), float(param[7]), int(param[8]), True)
 
         elif param[0] == CMD_ACQUIRERAMP:
-            #msg = "%s %s" % (CMD_REQ_TEMP, IAM)
-            #self.producer_hk.send_message(self.dcs_hk_q, msg)
-
             self.AcquireRamp()
-            self.ImageAcquisition(True)
-            #else:
-            #    self.AcquireRamp_window()
-            #    self.ImageAcquisition_window(True)
+            self.ImageAcquisition()
 
         elif param[0] == CMD_STOPACQUISITION:
             self.StopAcquisition(True)
@@ -397,6 +392,7 @@ class DC(threading.Thread):
 
         elif param[0] == CMD_SETFSMODE:
             self.samplingMode = int(param[1]) 
+            #self.log.send(IAM, INFO, param[1])
         
         elif param[0] == CMD_SETRAMPPARAM:
             self.expTime = float(param[1])
@@ -607,12 +603,12 @@ class DC(threading.Thread):
 
         self.log.send(self._iam, INFO, "Initialize " + RET_OK)
 
+        if self.gui:
+            msg = "%s %s OK" % (CMD_INITIALIZE1, IAM)
+            self.producer_ics.send_message(self.dcs_q, msg)
         
-        msg = "%s %s OK" % (CMD_INITIALIZE1, IAM)
-        self.producer_ics.send_message(self.dcs_q, msg)
-        
-        msg = "%s %.2f %s" % (CMD_INITIALIZE1, lib.MACIE_LibVersion(), self.macieSN)
-        self.producer.send_message(self.core_q, msg)
+            msg = "%s %.2f %s" % (CMD_INITIALIZE1, lib.MACIE_LibVersion(), self.macieSN)
+            self.producer.send_message(self.core_q, msg)
 
         self.init1 = True
 
@@ -674,6 +670,9 @@ class DC(threading.Thread):
 
         self.log.send(self._iam, INFO, "Initialize2 " + RET_OK)
 
+        if self.gui is False:
+            return True
+
         if ics:
             msg = "%s %s OK" % (CMD_INITIALIZE2, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
@@ -701,6 +700,9 @@ class DC(threading.Thread):
 
         self.log.send(self._iam, INFO, "ResetASIC " + RET_OK)
 
+        if self.gui is False:
+            return True
+
         if ics:
             msg = "%s %s OK" % (CMD_RESET, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
@@ -727,6 +729,9 @@ class DC(threading.Thread):
             return False
 
         self.log.send(self._iam, INFO, "DownloadMCD " + RET_OK)
+
+        if self.gui is False:
+            return True
 
         if ics:
             msg = "%s %s OK" % (CMD_DOWNLOAD, IAM)
@@ -811,6 +816,9 @@ class DC(threading.Thread):
         msg = "Set Detector (%d, %d) succeeded" % (muxType, outputs)
         self.log.send(self._iam, INFO, msg)
 
+        if self.gui is False:
+            return True
+
         if ics:
             msg = "%s %s OK" % (CMD_SETDETECTOR, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
@@ -836,6 +844,9 @@ class DC(threading.Thread):
             for i in range(MACIE_ERROR_COUNTERS):
                 msg = "%d" % errArr[i]
                 self.log.send(self._iam, INFO, msg)
+
+        if self.gui is False:
+            return
 
         if ics:
             msg = "%s %s OK" % (CMD_ERRCOUNT, IAM)
@@ -877,6 +888,9 @@ class DC(threading.Thread):
 
         msg = "SetRampParam(%d, %d, %d, %d, %d)" % (p1, p2, p3, p4, p5)
         self.log.send(self._iam, INFO, msg)
+
+        if self.gui is False:
+            return True
 
         if ics:
             msg = "%s %s OK" % (CMD_SETRAMPPARAM, IAM)
@@ -930,8 +944,11 @@ class DC(threading.Thread):
                 self.log.send(self._iam, ERROR, "SetFSParam failed - write ASIC registers")
                 return False
 
-        msg = "SetFSParam(%d, %d, %d, %f, %d)" % (p1, p2, p3, p4, p5)
+        msg = "SetFSParam(%d, %d, %d, %.3f, %d)" % (p1, p2, p3, p4, p5)
         self.log.send(self._iam, INFO, msg)
+
+        if self.gui is False:
+            return True
 
         if ics:
             msg = "%s %s OK" % (CMD_SETFSPARAM, IAM)
@@ -1114,6 +1131,9 @@ class DC(threading.Thread):
 
         self.log.send(self._iam, INFO, "Acquire Stop " + RET_OK)
 
+        if self.gui is False:
+            return True
+
         if ics:
             msg = "%s %s OK" % (CMD_STOPACQUISITION, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
@@ -1191,6 +1211,9 @@ class DC(threading.Thread):
 
         folder_name = self.WriteFitsFile(ics)
         
+        if self.gui is False:
+            return True
+
         if ics:
             msg = "%s %s %s" % (CMD_ACQUIRERAMP, IAM, folder_name)
             self.producer_ics.send_message(self.dcs_q, msg)
@@ -1249,6 +1272,9 @@ class DC(threading.Thread):
         lib.MACIE_CloseGigeScienceInterface(self.handle, self.slctMACIEs)
 
         foldername = self.WriteFitsFile_window()
+
+        if self.gui is False:
+            return True
 
         if ics:
             msg = "%s %s %s" % (CMD_ACQUIRERAMP, IAM, foldername)
@@ -1312,8 +1338,9 @@ class DC(threading.Thread):
                         idx += 1
 
             measured_durationT = ti.time() - self.measured_startT
-            msg = "%s %.3f %s" % (CMD_MEASURETIME, measured_durationT, filename)
-            self.producer.send_message(self.core_q, msg)
+            if self.gui:
+                msg = "%s %.3f %s" % (CMD_MEASURETIME, measured_durationT, filename)
+                self.producer.send_message(self.core_q, msg)
 
             if self.showfits and self.ramps == 1 and self.groups == 1 and self.reads == 1:
                 ds9 = WORKING_DIR + 'DCS/ds9'
@@ -1408,8 +1435,9 @@ class DC(threading.Thread):
         self.log.send(self._iam, INFO, tmp)
         
         measured_durationT = ti.time() - self.measured_startT
-        msg = "%s %.3f %s" % (CMD_MEASURETIME, measured_durationT, path + "Result/" + filename)
-        self.producer.send_message(self.core_q, msg)
+        if self.gui:
+            msg = "%s %.3f %s" % (CMD_MEASURETIME, measured_durationT, path + "Result/" + filename)
+            self.producer.send_message(self.core_q, msg)
 
         if self.showfits:
             ds9 = WORKING_DIR + 'DCS/ds9'

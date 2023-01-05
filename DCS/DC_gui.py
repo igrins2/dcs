@@ -618,7 +618,6 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
     # thread
     def acquireramp(self):
-
         if self.busy:
             return
         self.busy = True
