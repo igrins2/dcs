@@ -112,7 +112,7 @@ class DC(threading.Thread):
         # local
         self.myid = cfg.get(IAM, 'myid')
         self.pwd = cfg.get(IAM, 'pwd')
-        self.macieSN = int(cfg.get(IAM, 'sn'))
+        #self.macieSN = int(cfg.get(IAM, 'sn'))
 
         # exchange - queue
         self.gui_ex = cfg.get("DC", 'gui_exchange')
@@ -525,18 +525,18 @@ class DC(threading.Thread):
         connection = MACIE_NONE
         try:
 
-            ipaddr_array = MACIE_IpAddr
-            pIPs = ipaddr_array()
-            IPs = MACIE_IpAddr(ipAddr = (192, 168, 1, 100))
-            #ip = self.dcs_ip_addr.split(".")
-            #IPs = MACIE_IpAddr(ipAddr = (int(ip[0]), int(ip[1]), int(ip[2]), int(ip[3])))
+            #ipaddr_array = MACIE_IpAddr
+            #pIPs = ipaddr_array()
+            #IPs = MACIE_IpAddr(ipAddr = (192, 168, 1, 100))
+            ip = self.dcs_ip_addr.split(".")
+            IPs = MACIE_IpAddr(ipAddr = (int(ip[0]), int(ip[1]), int(ip[2]), int(ip[3])))
 
             arr_list = [0,]
             arr = np.array(arr_list)
             card = arr.ctypes.data_as(POINTER(c_ushort))
             self.pCard = pointer(pointer(MACIE_CardInfo()))
 
-            sts = lib.MACIE_CheckInterfaces(0, pIPs, 0, card, self.pCard)
+            sts = lib.MACIE_CheckInterfaces(0, IPs, 0, card, self.pCard)
             res = ""
             if sts == MACIE_OK:
                 res = RET_OK
@@ -561,11 +561,11 @@ class DC(threading.Thread):
 
             #if self.ip_addr == ipaddr:
 
-            #return ipaddr
-            return macieSN
+            return ipaddr
+            #return macieSN
 
         except:
-            return None, None
+            return None
 
 
     # GetHandle
@@ -592,16 +592,13 @@ class DC(threading.Thread):
             return -2
         
         # 3. CheckInterfaces
-        #_ip = self.CheckInterfaces()
-        #if _ip == None:
-        #    return -3
-        _sn = self.CheckInterfaces()
-        if _sn == None:
+        _ip = self.CheckInterfaces()
+        if _ip == None:
             return -3
-        #while _ip != self.dcs_ip_addr:
-        while _sn != self.macieSN:
+        while _ip != self.dcs_ip_addr:
             ti.sleep(0.5)
-            _sn = self.CheckInterfaces()
+            _ip = self.CheckInterfaces()
+        print(_ip)
 
         # 4. GetHandle
         self.GetHandle()
@@ -612,7 +609,7 @@ class DC(threading.Thread):
             msg = "%s %s OK" % (CMD_INITIALIZE1, IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
         
-            msg = "%s %.2f %s" % (CMD_INITIALIZE1, lib.MACIE_LibVersion(), self.macieSN)
+            msg = "%s %.2f %s" % (CMD_INITIALIZE1, lib.MACIE_LibVersion(), self.pCard[self.slctCard].contents.macieSerialNumber)
             self.producer.send_message(self.core_q, msg)
 
         self.init1 = True
