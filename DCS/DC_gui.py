@@ -26,6 +26,8 @@ from DC_def import *
 import threading
 import subprocess
 import time as ti
+import datetime
+
 from shutil import copyfile
 
 class MainWindow(Ui_Dialog, QMainWindow):
@@ -50,10 +52,21 @@ class MainWindow(Ui_Dialog, QMainWindow):
         # load ini file
         cfg = sc.LoadConfig(WORKING_DIR + "DCS/DCS.ini")
 
+        # ICS
+        self.ics_ip_addr = cfg.get('ICS', 'ip_addr')
+        self.ics_id = cfg.get('ICS', 'id')
+        self.ics_pwd = cfg.get('ICS', 'pwd')
+
+        self.ics_ex = cfg.get('ICS', 'ics_exchange')
+        self.ics_q = cfg.get('ICS', 'ics_routing_key')
+
+        self.dcs_ex = cfg.get('ICS', 'dcs_exchange')
+        self.dcs_q = cfg.get('ICS', 'dcs_routing_key')
+
         # server id, pwd
         self.myid = cfg.get(IAM, 'myid')
         self.pwd = cfg.get(IAM, 'pwd')
-
+        
         # exchange - queue
         self.gui_ex = cfg.get("DC", 'gui_exchange')
         self.gui_q = cfg.get("DC", 'gui_routing_key')
@@ -123,20 +136,37 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.e_user_dir.setText(WORKING_DIR + "DCS/Data/")
 
         self.cur_cnt = 0
-        self.cur_prog_step = 0
         self.fitsfullpath = ""
         self.asic_load_click = False
 
         self.prog_sts.setValue(0)
 
+        self.simulation_mode = False
+
+        self.init1 = False  #for ics
+
         self.producer = None
         self.consumer = None
 
+        self.producer_ics = None
+        self.consumer_ics = None
+
+        self.busy = False
+        self.stop_clicked = False
+
+        self.cur_prog_step = 0
+        self.prog_timer = QTimer(self)
+        self.prog_timer.timeout.connect(self.show_progressbar)
+
+        self.elapsed_timer = QTimer(self)
+        self.elapsed_timer.setInterval(0.001)
+        self.elapsed_timer.timeout.connect(self.show_elapsed)
+        
         self.connect_to_server_ex()
         self.connect_to_server_q()
 
-        self.busy = False
-       
+        self.connect_to_server_ics_ex()
+        self.connect_to_server_ics_q()       
 
     
     def closeEvent(self, event: QCloseEvent) -> None:
@@ -152,10 +182,79 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
         self.log.send(self._iam, INFO, "DCS gui closed!")
 
-        if self.producer != None:
-            self.producer.__del__()
+        self.producer.__del__()
+        self.producer_ics.__del__()
 
         return super().closeEvent(event)
+
+
+    #-------------------------------
+    def connect_to_server_ics_ex(self):
+        # RabbitMQ connect        
+        self.producer_ics = MsgMiddleware(IAM, self.ics_ip_addr, self.ics_id, self.ics_pwd, self.dcs_ex)
+        self.producer_ics.connect_to_server()
+        self.producer_ics.define_producer()
+
+
+    def connect_to_server_ics_q(self):
+        # RabbitMQ connect
+        self.consumer_ics = MsgMiddleware(IAM, self.ics_ip_addr, self.ics_id, self.ics_pwd, self.ics_ex)
+        self.consumer_ics.connect_to_server()
+        self.consumer_ics.define_consumer(self.ics_q, self.callback_ics)
+
+        th = threading.Thread(target=self.consumer_ics.start_consumer)
+        th.daemon = True
+        th.start() 
+
+
+    def callback_ics(self, ch, method, properties, body):
+        cmd = body.decode()
+        param = cmd.split()
+
+        if param[0] == ALIVE:
+            if self.init1:
+                param = cmd.split()
+                msg = "%s %s" % (ALIVE, IAM)
+                self.producer_ics.send_message(self.dcs_q, msg)   
+            return 
+
+        if param[1] != IAM:
+            return
+
+        msg = "receive: %s" % cmd
+        self.log.send(IAM, INFO, msg)
+
+        self.simulation_mode = bool(int(param[2]))
+
+        if self.simulation_mode:
+            ti.sleep(1)
+
+            _t = datetime.datetime.utcnow()
+            cur_datetime = [_t.year, _t.month, _t.day, _t.hour, _t.minute, _t.second, _t.microsecond]
+            folder_name = "%04d%02d%02d_%02d%02d%02d" % (cur_datetime[0], cur_datetime[1], cur_datetime[2], cur_datetime[3], cur_datetime[4], cur_datetime[5])
+
+            msg = "%s %s %s" % (param[0], IAM, folder_name)
+            self.producer_ics.send_message(self.dcs_q, msg)
+            
+            msg = "send: %s" % msg
+            self.log.send(IAM, INFO, msg)
+            return
+
+        if self.init1 is False:
+            msg = "%s %s TRY" % (param[0], IAM)
+            self.producer_ics.send_message(self.dcs_q, msg)
+            return     
+                
+        if param[0] == CMD_INITIALIZE2:
+            self.producer.send_message(self.gui_q, CMD_INITIALIZE2_ICS)
+
+        elif param[0] == CMD_SETFSPARAM:
+            msg = "%s %s %s %s %s %s %s" % (CMD_SETFSPARAM_ICS, param[3], param[4], param[5], param[6], param[7], param[8])
+            self.producer.send_message(self.gui_q, msg)
+
+        elif param[0] == CMD_STOPACQUISITION:
+            self.producer.send_message(self.gui_q, CMD_STOPACQUISITION_ICS)
+
 
 
     def connect_to_server_ex(self):
@@ -178,8 +277,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
     def callback(self, ch, method, properties, body):
         cmd = body.decode()
-        #msg = "receive: %s" % cmd
-        #self.log.send(self._iam, INFO, msg)
+        msg = "receive: %s" % cmd
+        self.log.send(self._iam, INFO, msg)
 
         param = cmd.split()
 
@@ -191,7 +290,42 @@ class MainWindow(Ui_Dialog, QMainWindow):
         elif param[0] == CMD_VERSION:
             self.label_ver.setText(param[1])
 
-        elif param[0] == CMD_MEASURETIME:
+        elif param[0] == CMD_INITIALIZE1:        
+
+            self.init1 = True
+
+            self.QWidgetBtnColor(self.btn_initialize1, "white", "green")
+
+            info = "%s (%s)" % (param[1], param[2])
+            self.label_ver.setText(info)
+
+            self.btn_initialize1.setEnabled(False)
+        
+        elif param[0] == CMD_INITIALIZE2:
+            self.QWidgetBtnColor(self.btn_initialize2, "black", "white")
+
+        elif param[0] == CMD_RESET:
+            self.QWidgetBtnColor(self.btn_reset, "black", "white")
+
+        elif param[0] == CMD_DOWNLOAD:
+            self.QWidgetBtnColor(self.btn_download_MCD, "black", "white")
+
+        elif param[0] == CMD_SETDETECTOR:
+            self.QWidgetBtnColor(self.btn_set_detector, "black", "white")
+
+        elif param[0] == CMD_ERRCOUNT:
+            self.QWidgetBtnColor(self.btn_error_cnt, "black", "white")
+
+            self.read_addr(self.e_addr_Vreset.text())
+            self.read_addr(self.e_addr_Dsub.text())
+            self.read_addr(self.e_addr_Vbiasgate.text())
+            self.read_addr(self.e_addr_Vrefmain.text())
+
+        elif param[0] == CMD_SETRAMPPARAM or param[0] == CMD_SETFSPARAM:
+            self.QWidgetBtnColor(self.btn_set_param, "black", "white")         
+
+        elif param[0] == CMD_ACQUIRERAMP:
+            
             self.label_measured_time.setText(param[1])
             
             if self.chk_autosave.isChecked():
@@ -204,50 +338,20 @@ class MainWindow(Ui_Dialog, QMainWindow):
                 self.e_user_dir.setText(path)
                 self.e_user_file.setText(file[-1][:-5] + "_")
 
-        elif param[0] == CMD_INITIALIZE1:            
-            info = "%s (%s)" % (param[1], param[2])
-            self.label_ver.setText(info)
+            self.QWidgetBtnColor(self.btn_acquireramp, "black", "white")
 
-            self.btn_initialize1.setEnabled(False)
-        
-        elif param[0] == CMD_INITIALIZE2:
-            pass
-        elif param[0] == CMD_RESET:
-            pass
-        elif param[0] == CMD_DOWNLOAD:
-            pass
-        elif param[0] == CMD_SETDETECTOR:
-            pass
-        elif param[0] == CMD_ERRCOUNT:
-            self.read_addr(self.e_addr_Vreset.text())
-            self.read_addr(self.e_addr_Dsub.text())
-            self.read_addr(self.e_addr_Vbiasgate.text())
-            self.read_addr(self.e_addr_Vrefmain.text())
-
-        elif param[0] == CMD_SETRAMPPARAM:
-            pass
-        elif param[0] == CMD_SETFSPARAM:
-            pass         
-
-        elif param[0] == CMD_ACQUIRERAMP:
-            self.prog_timer.stop()
             self.cur_prog_step = 100
             self.prog_sts.setValue(self.cur_prog_step)
-
-            self.elapsed_timer.stop()
 
             show_cur_cnt = "%d / %s" % (self.cur_cnt, self.e_repeat.text())
             self.label_cur_num.setText(show_cur_cnt)
             if self.cur_cnt < int(self.e_repeat.text()):
-                self.acquireramp()
+                self.btn_acquireramp.click()
             else:
                 self.cur_cnt = 0
 
         elif param[0] == CMD_STOPACQUISITION:
             pass
-
-        #elif param[0] == CMD_CONNECT_ICS_Q:
-        #    self.btn_connect_icsq.setEnabled(int(param[1])*(-1))
 
         elif param[0] == CMD_WRITEASICREG:
             _addr = str(hex(int(param[1])))[2:6]
@@ -279,10 +383,22 @@ class MainWindow(Ui_Dialog, QMainWindow):
                 self.e_read_input.setText(_text)
 
         elif param[0] == CMD_GETTELEMETRY:
-            pass
-        else:
-            pass
-    
+            self.QWidgetBtnColor(self.btn_get_telemetry, "black", "white")
+
+        #------------------------------
+
+        elif param[0] == CMD_INITIALIZE2_ICS:
+            msg = "%s %s" % (CMD_INITIALIZE2, IAM)
+            self.producer_ics.send_message(self.dcs_q, msg)
+
+        elif param[0] == CMD_SETFSPARAM_ICS:
+            msg = "%s %s %.3f %s " % (CMD_SETFSPARAM, IAM, float(param[1]), param[2])
+            self.producer_ics.send_message(self.dcs_q, msg)
+
+        elif param[0] == CMD_STOPACQUISITION_ICS:
+            msg = "%s %s" % (CMD_STOPACQUISITION, IAM)
+            self.producer_ics.send_message(self.dcs_q, msg)   
+
 
 
     def set_param_ui(self, resets, reads, groups, drops, ramps):
@@ -424,6 +540,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
             return
         self.busy = True
 
+        self.QWidgetBtnColor(self.btn_initialize1, "yellow", "blue")
+
         msg = "%s %s" % (CMD_INITIALIZE1, self.e_timeout.text())
         self.producer.send_message(self.gui_q, msg)
 
@@ -434,6 +552,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
             return
         self.busy = True
 
+        self.QWidgetBtnColor(self.btn_initialize2, "yellow", "blue")
+
         self.producer.send_message(self.gui_q, CMD_INITIALIZE2)
 
 
@@ -442,6 +562,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
         if self.busy:
             return
         self.busy = True
+
+        self.QWidgetBtnColor(self.btn_reset, "yellow", "blue")
 
         self.producer.send_message(self.gui_q, CMD_RESET)
 
@@ -452,6 +574,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
             return
         self.busy = True
 
+        self.QWidgetBtnColor(self.btn_download_MCD, "yellow", "blue")
+
         self.producer.send_message(self.gui_q, CMD_DOWNLOAD)
 
 
@@ -460,6 +584,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
         if self.busy:
             return
         self.busy = True
+
+        self.QWidgetBtnColor(self.btn_set_detector, "yellow", "blue")
 
         msg = "%s %d %s" % (CMD_SETDETECTOR, MUX_TYPE, self.cmb_ouput_channels.currentText())
         self.producer.send_message(self.gui_q, msg)
@@ -470,6 +596,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
         if self.busy:
             return
         self.busy = True
+
+        self.QWidgetBtnColor(self.btn_error_cnt, "yellow", "blue")
 
         self.producer.send_message(self.gui_q, CMD_ERRCOUNT)
 
@@ -546,6 +674,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
             return
         self.busy = True
 
+        self.QWidgetBtnColor(self.btn_set_param, "yellow", "blue")
+
         if self.samplingMode == FOWLER_MODE and self.judge_param() == False:
             self.busy = False
             return
@@ -621,6 +751,9 @@ class MainWindow(Ui_Dialog, QMainWindow):
         if self.busy:
             return
         self.busy = True
+        self.stop_clicked = False
+
+        self.QWidgetBtnColor(self.btn_acquireramp, "yellow", "blue")
 
         if self.chk_ROI_mode.isChecked():
             self.x_start = int(self.e_x_start.text())
@@ -633,35 +766,24 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.cur_cnt += 1
 
         self.label_measured_time.setText("0.0")
+        self.label_elapsed.setText("0.0")
 
-        self.prog_timer = QTimer(self)
         self.prog_timer.setInterval(int(self.cal_waittime*10))
-        self.prog_timer.timeout.connect(self.show_progressbar)
-
         self.cur_prog_step = 0
         self.prog_sts.setValue(self.cur_prog_step)
         self.prog_timer.start()
-
-        self.elapsed_timer = QTimer(self)
-        self.elapsed_timer.setInterval(0.001)
-        self.elapsed_timer.timeout.connect(self.show_elapsed)
         
         self.elapsed = ti.time()
-        self.label_elapsed.setText("0.0")
         self.elapsed_timer.start()
-        
+
         msg = "%s %d" % (CMD_ACQUIRERAMP, self.chk_ROI_mode.isChecked())
         self.producer.send_message(self.gui_q, msg)  
-        
+
         
     def show_progressbar(self):
-    #    th = threading.Thread(target=self.progressbar)
-    #    th.start() 
-    #def progressbar(self):
-        if self.cur_prog_step >= 100:
-            self.log.send(self._iam, INFO, "progress bar end!!!")
+        if self.cur_prog_step >= 100 or self.stop_clicked:
+            #self.log.send(self._iam, INFO, "progress bar end!!!")
             self.prog_timer.stop()
-            self.elapsed_timer.stop()
             return
         
         self.cur_prog_step += 1
@@ -670,17 +792,22 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
 
     def show_elapsed(self):
-        msg = "%.3f" % (ti.time() - self.elapsed)
+        cur_elapsed = ti.time() - self.elapsed
+        measured = float(self.label_measured_time.text())
+        if (measured > 0 and cur_elapsed >= measured) or self.stop_clicked:
+            self.elapsed_timer.stop()
+            return
+
+        msg = "%.3f" % cur_elapsed
         self.label_elapsed.setText(msg)
         #print(ti.time() - self.elapsed)
 
 
     def stop_acquistion(self):
-        if self.cur_prog_step == 0:
-            return
-
-        self.prog_timer.stop()
-        self.elapsed_timer.stop()
+        if self.cur_prog_step > 0:
+            self.prog_timer.stop()
+            self.elapsed_timer.stop()
+            self.stop_clicked = True
         
         self.producer.send_message(self.gui_q, CMD_STOPACQUISITION)
 
@@ -722,6 +849,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
         if self.busy:
             return
         self.busy = True
+
+        self.QWidgetBtnColor(self.btn_get_telemetry, "yellow", "blue")
 
         self.producer.send_message(self.gui_q, CMD_GETTELEMETRY)
 
@@ -784,6 +913,15 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
         msg = "%s %d" % (CMD_READASICREG, _addr)
         self.producer.send_message(self.gui_q, msg)
+
+
+    def QWidgetBtnColor(self, widget, textcolor, bgcolor=None):
+        if bgcolor == None:
+            label = "QPushButton {color:%s}" % textcolor
+            widget.setStyleSheet(label)
+        else:
+            label = "QPushButton {color:%s;background:%s}" % (textcolor, bgcolor)
+            widget.setStyleSheet(label)
 
         
 if __name__ == "__main__":
