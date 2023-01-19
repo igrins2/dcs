@@ -694,6 +694,9 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
             self.expTime = (T_frame * reads * groups) + (T_frame * drops * (groups -1 ))
             self.cal_waittime = T_br + ((T_frame * resets) + self.expTime) * ramps
+            print('---------------')
+            print(resets, reads, groups, drops, ramps)
+            print('---------------')
             
             msg = "%s %.3f %d %d %d %d %d" % (CMD_SETRAMPPARAM, self.expTime, resets, reads, groups, drops, ramps)
             self.producer.send_message(self.gui_q, msg)

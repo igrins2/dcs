@@ -178,6 +178,9 @@ class DC(threading.Thread):
             self.connect_to_server_ex()
             self.connect_to_server_q()
 
+        self.acquiring = False
+        threading.Thread(target=self.acquire).start()
+
 
 
     def __del__(self):
@@ -329,9 +332,11 @@ class DC(threading.Thread):
 
         elif param[0] == CMD_ACQUIRERAMP:
             if self.AcquireRamp():
-                if self.ImageAcquisition():
-                    msg = "%s %.3f %s" % (param[0], self.measured_durationT, self.file_name)
-                    self.producer.send_message(self.core_q, msg)
+                self.acquiring = True
+                #threading.Thread(target=self.ImageAcquisition).start()
+                #if self.ImageAcquisition():
+                    #msg = "%s %.3f %s" % (CMD_ACQUIRERAMP, self.measured_durationT, self.file_name)
+                    #self.producer.send_message(self.core_q, msg)
 
         elif param[0] == CMD_STOPACQUISITION:
             if self.StopAcquisition():
@@ -390,9 +395,12 @@ class DC(threading.Thread):
             self.SetFSParam(int(param[2]), int(param[3]), int(param[4]), float(param[5]), int(param[6]))
 
             if self.AcquireRamp():
-                if self.ImageAcquisition():
-                    msg = "%s %.3f %s" % (param[0], self.measured_durationT, self.folder_name)
-                    self.producer.send_message(self.core_q, msg)
+                self.ics_cmd = True
+                self.acquiring = True
+                #threading.Thread(target=self.ImageAcquisition, args=(True,)).start()
+                #if self.ImageAcquisition():
+                    #msg = "%s %.3f %s" % (param[0], self.measured_durationT, self.folder_name)
+                    #self.producer.send_message(self.core_q, msg)
 
         elif param[0] == CMD_STOPACQUISITION_ICS:
             if self.StopAcquisition():
@@ -752,7 +760,7 @@ class DC(threading.Thread):
         if self.handle == 0:
             return False
 
-        self.resets, self.reads, self.groups, self.ramps = p1, p2, p3, p5
+        self.resets, self.reads, self.groups, self.drops, self.ramps = p1, p2, p3, p4, p5
 
         res = [0 for _ in range(8)]
 
@@ -930,6 +938,23 @@ class DC(threading.Thread):
         return True
 
 
+    def acquire(self):
+        while True:
+            if self.acquiring:
+                self.acquiring = False
+                if self.ImageAcquisition():
+                    if self.ics_cmd:
+                        self.ics_cmd = False
+                        msg = "%s %.3f %s" % (CMD_SETFSPARAM_ICS, self.measured_durationT, self.folder_name)
+                        self.producer.send_message(self.core_q, msg)
+                    else:
+                        msg = "%s %.3f %s" % (CMD_ACQUIRERAMP, self.measured_durationT, self.file_name)
+                        self.producer.send_message(self.core_q, msg)
+
+            ti.sleep(0.1)
+
+
+
     def ImageAcquisition(self):
         if self.handle == 0:
             return False
@@ -946,26 +971,35 @@ class DC(threading.Thread):
         if self.samplingMode == UTR_MODE:
             getByte = FRAME_X * FRAME_Y * 2 * self.reads * self.groups * self.ramps
             # 1000 -> 10000: increse wating time for long exposure
-            triggerTimeout = triggerTimeout + ((T_frame * self.resets) + T_frame * self.drops * self.groups) * self.ramps * 100000
+            triggerTimeout = triggerTimeout + ((T_frame * self.resets) + ((T_frame * self.reads * self.groups) + (T_frame * self.drops * (self.groups -1 )))) * self.ramps * 1000
+
+            print('---------------')
+            print(self.reads, self.reads, self.groups, self.drops, self.ramps)
+            print('---------------')
+
             msg = "triggerTimeout 2: %.3f" % triggerTimeout
             self.log.send(self._iam, DEBUG, msg)
 
         else:
             getByte = FRAME_X * FRAME_Y * 2 * 2 * self.reads * self.ramps
-            triggerTimeout = triggerTimeout + ((T_frame * self.resets) + self.fowlerTime + (2 * T_frame * self.reads)) * self.ramps * 100000
+            triggerTimeout = triggerTimeout + ((T_frame * self.resets) + self.fowlerTime + (2 * T_frame * self.reads)) * self.ramps * 1000
             msg = "triggerTimeout 2: %.3f %.3f" % (self.fowlerTime, triggerTimeout)
             self.log.send(self._iam, DEBUG, msg)
 
         byte = 0
-        for i in range(1000):
+        #for i in range(100):
+        for i in range(int(triggerTimeout / 1000 * 2)):
             byte = lib.MACIE_AvailableScienceData(self.handle)
             if byte >= getByte:
                 msg = "Available science data = %d bytes, Loop = %d" % (
                     byte, i)
                 self.log.send(self._iam, INFO, msg)
                 break
-            self.log.send(self._iam, INFO, "Wait....")
-            ti.sleep(triggerTimeout / 100 / 100000)
+
+            log = "Wait....(%d)" % i
+            self.log.send(self._iam, INFO, log)
+            #ti.sleep(triggerTimeout / 100 / 1000)
+            ti.sleep(1)
 
         if byte <= 0:
             self.log.send(self._iam, WARNING, "Trigger timeout: no available science data")
