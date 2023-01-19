@@ -111,14 +111,13 @@ HK_REQ_UPLOAD_DB = "UploadDB"   #uploader
 
 CMD_CORESTART = "CoreStart"
 CMD_SIMULATION = "Simulation"
-CMD_VERSION = "LibVersion"
 CMD_SHOWFITS = "ShowFits"
 #CMD_MEASURETIME = "MeasuredDurationT"
 CMD_EXIT = "Exit"
 
-CMD_INITIALIZE1 = "Initialize1"
+#CMD_INITIALIZE1 = "Initialize1"
 CMD_INITIALIZE2 = "Initialize2"
-CMD_RESET = "ResetASIC"
+#sCMD_RESET = "ResetASIC"
 CMD_DOWNLOAD = "DownloadMCD"
 CMD_SETDETECTOR = "SetDetector"
 CMD_ERRCOUNT = "GetErrorCounters"

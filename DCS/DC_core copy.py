@@ -3,7 +3,7 @@
 """
 Created on Mar 4, 2022
 
-Modified on Jan 19, 2023
+Modified on Jan 18, 2023
 
 @author: hilee
 """
@@ -23,6 +23,7 @@ import json
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 import Libs.SetConfig as sc
+#import Libs.rabbitmq_server as serv
 from Libs.MsgMiddleware import *
 from Libs.logger import *
 
@@ -78,6 +79,9 @@ class DC(threading.Thread):
         
         self.log = LOG(WORKING_DIR + "DCS")
 
+        self._iam = "CORE"
+        self._target = "GUI"
+
         if self.gui:
             self.log.send(self._iam, INFO, "start DCS core!!!")
 
@@ -97,6 +101,18 @@ class DC(threading.Thread):
         self.hk_dcs_q = cfg.get('ICS', "hk_dcs_routing_key")
 
         self.dcs_ip_addr = cfg.get(IAM, 'ip_addr')
+
+        # ===========================================
+        # local
+        self.myid = cfg.get(IAM, 'myid')
+        self.pwd = cfg.get(IAM, 'pwd')
+        self.macieSN = int(cfg.get(IAM, 'sn'))
+
+        # exchange - queue
+        self.gui_ex = cfg.get("DC", 'gui_exchange')
+        self.gui_q = cfg.get("DC", 'gui_routing_key')
+        self.core_ex = cfg.get("DC", 'core_exchange')
+        self.core_q = cfg.get("DC", 'core_routing_key')
 
         # ===========================================
         # DCS
@@ -122,7 +138,7 @@ class DC(threading.Thread):
 
         self._24Bit = False  # 24bit-True, 16bit-False
 
-        self.expTime = 1.63
+        self.expTime = 0.0
         self.fowlerTime = 0.0
 
         self.preampInputScheme = 1    # 2
@@ -149,6 +165,9 @@ class DC(threading.Thread):
 
         self.dewar_info = False       
 
+        self.producer = None
+        self.consumer = None
+
         self.producer_hk = None
         self.consumer_hk = None
 
@@ -156,6 +175,28 @@ class DC(threading.Thread):
             self.connect_to_server_hk_ex()
             self.connect_to_server_hk_q()
 
+            self.connect_to_server_ex()
+            self.connect_to_server_q()
+
+        self.acquiring = False
+        threading.Thread(target=self.acquire).start()
+
+
+
+    def __del__(self):
+        if self.gui:
+            self.log.send(self._iam, INFO, "DCS core closing...")
+
+        for th in threading.enumerate():
+            if self.gui:
+                self.log.send(self._iam, INFO, th.name + " exit.")
+
+        if self.gui:
+            self.producer.__del__()
+
+        self.log.send(self._iam, INFO, "DCS core closed!")
+
+        
 
     #-------------------------------
     def connect_to_server_hk_ex(self):
@@ -196,6 +237,178 @@ class DC(threading.Thread):
             self.hk_dict = dict((k, t(v)) for (k, t), v in zip(FieldNames, HK_list))
             self.dewar_info = True            
 
+
+    #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+    def connect_to_server_ex(self):
+        # RabbitMQ connect
+        self.producer = MsgMiddleware(self._iam, "localhost", self.myid, self.pwd, self.core_ex)
+        self.producer.connect_to_server()
+        self.producer.define_producer()
+
+
+    def connect_to_server_q(self):
+        # RabbitMQ connect
+        self.consumer = MsgMiddleware(self._iam, "localhost", self.myid, self.pwd, self.gui_ex)
+        self.consumer.connect_to_server()
+        self.consumer.define_consumer(self.gui_q, self.callback)
+
+        th = threading.Thread(target=self.consumer.start_consumer)
+        th.start() 
+
+        msg = "%s OK" % CMD_CORESTART
+        self.producer.send_message(self.core_q, msg)
+
+
+    def callback(self, ch, method, properties, body):
+        cmd = body.decode()
+        msg = "receive: %s" % cmd
+        self.log.send(self._iam, INFO, msg)
+
+        param = cmd.split()
+
+        if param[0] == CMD_VERSION:
+            msg = "%s %s" % (param[0], self.LibVersion())
+            self.producer.send_message(self.core_q, msg)
+
+        elif param[0] == CMD_SHOWFITS:
+            self.showfits = bool(int(param[1]))
+        
+        elif param[0] == CMD_EXIT:
+            self.__del__()
+
+        #--------------------------------
+        elif param[0] == CMD_INITIALIZE1:            
+            if self.Initialize(int(param[1])):
+                msg = "%s %.2f %s" % (param[0], lib.MACIE_LibVersion(), self.macieSN)
+                self.producer.send_message(self.core_q, msg)
+
+        elif param[0] == CMD_INITIALIZE2:
+            if self.Initialize2():
+                msg = "%s OK" % param[0]
+                self.producer.send_message(self.core_q, msg)
+
+        elif param[0] == CMD_RESET:
+            if self.ResetASIC():
+                msg = "%s OK" % param[0]
+                self.producer.send_message(self.core_q, msg)
+                    
+        elif param[0] == CMD_DOWNLOAD:
+            if self.DownloadMCD():
+                msg = "%s OK" % param[0]
+                self.producer.send_message(self.core_q, msg)
+        
+        elif param[0] == CMD_SETDETECTOR:
+            if self.SetDetector(int(param[1]), int(param[2])):
+                msg = "%s OK" % param[0]
+                self.producer.send_message(self.core_q, msg)
+
+        elif param[0] == CMD_ERRCOUNT:
+            if self.GetErrorCounters():
+                msg = "%s OK" % param[0]
+                self.producer.send_message(self.core_q, msg)
+
+        elif param[0] == CMD_SETFSMODE:
+            self.samplingMode = int(param[1]) 
+            #self.log.send(IAM, INFO, param[1])
+        
+        elif param[0] == CMD_SETRAMPPARAM:
+            self.expTime = float(param[1])
+            if self.SetRampParam(int(param[2]), int(param[3]), int(param[4]), int(param[5]), int(param[6])):
+                msg = "%s OK" % param[0]
+                self.producer.send_message(self.core_q, msg)
+
+        elif param[0] == CMD_SETFSPARAM:
+            self.expTime = float(param[1])
+            if self.SetFSParam(int(param[2]), int(param[3]), int(param[4]), float(param[5]), int(param[6])):
+                msg = "%s OK" % param[0]
+                self.producer.send_message(self.core_q, msg)
+
+        elif param[0] == CMD_SETWINPARAM:
+            self.x_start = int(param[1])
+            self.x_stop = int(param[2])
+            self.y_start = int(param[3])
+            self.y_stop = int(param[4])
+
+        elif param[0] == CMD_ACQUIRERAMP:
+            if self.AcquireRamp():
+                self.acquiring = True
+                #threading.Thread(target=self.ImageAcquisition).start()
+                #if self.ImageAcquisition():
+                    #msg = "%s %.3f %s" % (CMD_ACQUIRERAMP, self.measured_durationT, self.file_name)
+                    #self.producer.send_message(self.core_q, msg)
+
+        elif param[0] == CMD_STOPACQUISITION:
+            if self.StopAcquisition():
+                msg = "%s OK" % param[0]
+                self.producer.send_message(self.core_q, msg)
+
+        elif param[0] == CMD_WRITEASICREG:
+            res = self.write_ASIC_reg(int(param[1]), int(param[2]))
+            if res == MACIE_OK:
+                result = RET_OK
+                msg = "%s %s" % (param[0], param[1])
+                self.producer.send_message(self.core_q, msg)
+            else:
+                result = RET_FAIL
+            msg = "WriteASICReg %s - h%04x = %04x" % (result, int(param[1]), int(param[2]))
+            self.log.send(self._iam, INFO, msg)
+        
+        elif param[0] == CMD_READASICREG:
+            val, sts = self.read_ASIC_reg(int(param[1]))
+            if sts == MACIE_OK:
+                result = RET_OK
+                _value = val[0]
+                msg = "%s %s %d" % (param[0], param[1], _value)
+                self.producer.send_message(self.core_q, msg)
+            else:
+                result = RET_FAIL
+                _value = 0
+
+            msg = "ReadASICReg %s - h%04x = %04x" % (result, int(param[1]), _value)     #need to check
+            self.log.send(self._iam, INFO, msg)
+
+        elif param[0] == CMD_GETTELEMETRY:
+            if self.GetTelemetry():
+                msg = "%s OK" % param[0]
+                self.producer.send_message(self.core_q, msg)
+
+        #--------------------------------
+
+        elif param[0] == CMD_INITIALIZE2_ICS:
+            if self.Initialize2() is False:
+                return            
+            if self.ResetASIC() is False:
+                return
+            if self.DownloadMCD() is False:
+                return
+            if self.SetDetector(2, 32) is False:
+                return
+
+            self.samplingMode = FOWLER_MODE
+            
+            msg = "%s OK" % param[0]
+            self.producer.send_message(self.core_q, msg)
+
+        elif param[0] == CMD_SETFSPARAM_ICS:
+            self.expTime = float(param[1])
+            self.SetFSParam(int(param[2]), int(param[3]), int(param[4]), float(param[5]), int(param[6]))
+
+            if self.AcquireRamp():
+                self.ics_cmd = True
+                self.acquiring = True
+                #threading.Thread(target=self.ImageAcquisition, args=(True,)).start()
+                #if self.ImageAcquisition():
+                    #msg = "%s %.3f %s" % (param[0], self.measured_durationT, self.folder_name)
+                    #self.producer.send_message(self.core_q, msg)
+
+        elif param[0] == CMD_STOPACQUISITION_ICS:
+            if self.StopAcquisition():
+                msg = "%s OK" % param[0]
+                self.producer.send_message(self.core_q, msg)
+
+
+    #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     # Version
     def LibVersion(self):
@@ -725,6 +938,22 @@ class DC(threading.Thread):
         return True
 
 
+    def acquire(self):
+        while True:
+            if self.acquiring:
+                self.acquiring = False
+                if self.ImageAcquisition():
+                    if self.ics_cmd:
+                        self.ics_cmd = False
+                        msg = "%s %.3f %s" % (CMD_SETFSPARAM_ICS, self.measured_durationT, self.folder_name)
+                        self.producer.send_message(self.core_q, msg)
+                    else:
+                        msg = "%s %.3f %s" % (CMD_ACQUIRERAMP, self.measured_durationT, self.file_name)
+                        self.producer.send_message(self.core_q, msg)
+
+            ti.sleep(0.1)
+
+
 
     def ImageAcquisition(self):
         if self.handle == 0:
@@ -744,9 +973,9 @@ class DC(threading.Thread):
             # 1000 -> 10000: increse wating time for long exposure
             triggerTimeout = triggerTimeout + ((T_frame * self.resets) + ((T_frame * self.reads * self.groups) + (T_frame * self.drops * (self.groups -1 )))) * self.ramps * 1000
 
-            #print('---------------')
-            #print(self.reads, self.reads, self.groups, self.drops, self.ramps)
-            #print('---------------')
+            print('---------------')
+            print(self.reads, self.reads, self.groups, self.drops, self.ramps)
+            print('---------------')
 
             msg = "triggerTimeout 2: %.3f" % triggerTimeout
             self.log.send(self._iam, DEBUG, msg)
@@ -1213,3 +1442,4 @@ if __name__ == "__main__":
     
     dc = DC(True)
 
+    #del dc

@@ -3,7 +3,7 @@
 """
 Created on Aug 4, 2022
 
-Modified on Jan 19, 2023
+Modified on Dec 15, 2022
 
 @author: hilee
 """
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import *
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 import Libs.SetConfig as sc
+#import Libs.rabbitmq_server as serv
 from Libs.MsgMiddleware import *
 from Libs.logger import *
 
@@ -41,7 +42,10 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
         self.core = DC()
 
-        self.log.send(IAM, INFO, "start DCS gui!!!")        
+        self._iam = "GUI"
+        self._target = "CORE"
+
+        self.log.send(self._iam, INFO, "start DCS gui!!!")        
 
         #start core!!!
         self.proc_core = None
@@ -61,7 +65,17 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
         self.dcs_ex = cfg.get('ICS', 'dcs_exchange')
         self.dcs_q = cfg.get('ICS', 'dcs_routing_key')
+
+        # server id, pwd
+        self.myid = cfg.get(IAM, 'myid')
+        self.pwd = cfg.get(IAM, 'pwd')
         
+        # exchange - queue
+        self.gui_ex = cfg.get("DC", 'gui_exchange')
+        self.gui_q = cfg.get("DC", 'gui_routing_key')
+        self.core_ex = cfg.get("DC", 'core_exchange')
+        self.core_q = cfg.get("DC", 'core_routing_key')
+
         self.asic_Vreset = cfg.get("DC", 'Vreset')
         self.asic_Dsub = cfg.get("DC", 'Dsub')
         self.asic_VBiasGate = cfg.get("DC", 'VBiasGate')
@@ -71,6 +85,15 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.e_write_Dsub.setText(self.asic_Dsub)
         self.e_write_Vbiasgate.setText(self.asic_VBiasGate)
         self.e_write_Vrefmain.setText(self.asic_VrefMain)
+
+        self.loadfile_path = cfg.get('DC', 'config-dir')
+        self.loadfile_path = WORKING_DIR + self.loadfile_path
+
+        self.macie_file = cfg.get('DC', 'MACIE-Register')
+        self.asic_file = cfg.get('DC', 'ASIC-Firmware')
+
+        self.exe_path = cfg.get('DC', 'Img-dir')
+        self.exe_path = WORKING_DIR + self.exe_path
 
         self.gige_timeout = cfg.get('DC', 'timeout')
         self.output_channel = cfg.get('DC', 'channel')
@@ -89,19 +112,21 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.e_y_stop.setEnabled(False)
             
         #Load: cofiguration files
-        self.e_config_dir.setText(self.core.loadfile_path)
-        self.e_MACIE_reg.setText(self.core.macie_file)
-        self.e_ASIC_firmware.setText(self.core.asic_file)
-        self.e_img_dir.setText(self.core.exe_path)
+        self.e_config_dir.setText(self.loadfile_path)
+        self.e_MACIE_reg.setText(self.macie_file)
+        self.e_ASIC_firmware.setText(self.asic_file)
+        self.e_img_dir.setText(self.exe_path)
         
         #Load: version, SetGigeTimeout, Output Channel
         self.e_timeout.setText(self.gige_timeout)
         self.cmb_ouput_channels.setCurrentText(self.output_channel)
 
+        self.samplingMode = UTR_MODE
         self.radio_UTR.setChecked(True)
 
         self.set_param_ui(1, 1, 1, 0, 1)
-        self.e_exp_time.setText(str(self.core.expTime))
+        self.e_exp_time.setText("1.63")
+        self.expTime = 1.63
         self.cal_waittime = 0.0        
 
         self.radio_exp_time.setChecked(True)
@@ -115,12 +140,16 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
         self.cur_cnt = 0
         self.fitsfullpath = ""
+        self.asic_load_click = False
 
         self.prog_sts.setValue(0)
 
         self.simulation_mode = False
 
         self.init1 = False  #for ics
+
+        self.producer = None
+        self.consumer = None
 
         self.producer_ics = None
         self.consumer_ics = None
@@ -136,25 +165,30 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.elapsed_timer.setInterval(0.001)
         self.elapsed_timer.timeout.connect(self.show_elapsed)
         
+        self.connect_to_server_ex()
+        self.connect_to_server_q()
+
         self.connect_to_server_ics_ex()
         self.connect_to_server_ics_q()    
 
         # ----------------------------
-
-        self.label_ver.setText(self.core.LibVersion())
+        self.core.LibVersion()   
 
     
     def closeEvent(self, event: QCloseEvent) -> None:
-        self.log.send(IAM, INFO, "DCS closing...")
+        self.log.send(self._iam, INFO, "DCS gui closing...")
+
+        self.producer.send_message(self.gui_q, CMD_EXIT)
 
         for th in threading.enumerate():
-            self.log.send(IAM, INFO, th.name + " exit.")
+            self.log.send(self._iam, INFO, th.name + " exit.")
 
         if self.proc_core != None:
             self.proc_core.terminate()
 
-        self.log.send(IAM, INFO, "DCS closed!")
+        self.log.send(self._iam, INFO, "DCS gui closed!")
 
+        self.producer.__del__()
         self.producer_ics.__del__()
 
         return super().closeEvent(event)
@@ -226,7 +260,137 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
         elif param[0] == CMD_STOPACQUISITION:
             self.producer.send_message(self.gui_q, CMD_STOPACQUISITION_ICS)
-    
+
+
+
+    def connect_to_server_ex(self):
+        # RabbitMQ connect
+        self.producer = MsgMiddleware(self._iam, "localhost", self.myid, self.pwd, self.gui_ex)
+        self.producer.connect_to_server()
+        self.producer.define_producer()
+
+            
+    def connect_to_server_q(self):
+        # RabbitMQ connect
+        self.consumer = MsgMiddleware(self._iam, "localhost", self.myid, self.pwd, self.core_ex)
+        self.consumer.connect_to_server()
+        self.consumer.define_consumer(self.core_q, self.callback)
+
+        th = threading.Thread(target=self.consumer.start_consumer)
+        th.daemon = True
+        th.start() 
+
+
+    def callback(self, ch, method, properties, body):
+        cmd = body.decode()
+        msg = "receive: %s" % cmd
+        self.log.send(self._iam, INFO, msg)
+
+        param = cmd.split()
+
+        self.busy = False
+
+        if param[0] == CMD_CORESTART:
+            self.producer.send_message(self.gui_q, CMD_VERSION)
+
+        elif param[0] == CMD_VERSION:
+            self.label_ver.setText(param[1])
+
+        elif param[0] == CMD_INITIALIZE1:        
+
+            self.init1 = True
+
+            self.QWidgetBtnColor(self.btn_initialize1, "white", "green")
+
+            info = "%s (%s)" % (param[1], param[2])
+            self.label_ver.setText(info)
+
+            self.btn_initialize1.setEnabled(False)
+        
+        elif param[0] == CMD_INITIALIZE2:
+            self.QWidgetBtnColor(self.btn_initialize2, "black", "white")
+
+        elif param[0] == CMD_RESET:
+            self.QWidgetBtnColor(self.btn_reset, "black", "white")
+
+        elif param[0] == CMD_DOWNLOAD:
+            self.QWidgetBtnColor(self.btn_download_MCD, "black", "white")
+
+        elif param[0] == CMD_SETDETECTOR:
+            self.QWidgetBtnColor(self.btn_set_detector, "black", "white")
+
+        elif param[0] == CMD_ERRCOUNT:
+            self.QWidgetBtnColor(self.btn_error_cnt, "black", "white")
+
+            self.read_addr(self.e_addr_Vreset.text())
+            self.read_addr(self.e_addr_Dsub.text())
+            self.read_addr(self.e_addr_Vbiasgate.text())
+            self.read_addr(self.e_addr_Vrefmain.text())
+
+        elif param[0] == CMD_SETRAMPPARAM or param[0] == CMD_SETFSPARAM:
+            self.QWidgetBtnColor(self.btn_set_param, "black", "white")         
+
+        elif param[0] == CMD_ACQUIRERAMP:
+            
+            self.label_measured_time.setText(param[1])
+            
+            if self.chk_autosave.isChecked():
+                self.fitsfullpath = param[2]
+                file = param[2].split("/")
+                path = ""
+                for i in file[1:-1]:
+                    path += "/"
+                    path += i
+                self.e_user_dir.setText(path)
+                self.e_user_file.setText(file[-1][:-5] + "_")
+
+            self.QWidgetBtnColor(self.btn_acquireramp, "black", "white")
+
+            self.cur_prog_step = 100
+            self.prog_sts.setValue(self.cur_prog_step)
+
+            show_cur_cnt = "%d / %s" % (self.cur_cnt, self.e_repeat.text())
+            self.label_cur_num.setText(show_cur_cnt)
+            if self.cur_cnt < int(self.e_repeat.text()):
+                self.btn_acquireramp.click()
+            else:
+                self.cur_cnt = 0
+
+        elif param[0] == CMD_STOPACQUISITION:
+            pass
+
+        elif param[0] == CMD_WRITEASICREG:
+            _addr = str(hex(int(param[1])))[2:6]
+
+            if self.asic_load_click and _addr == self.e_addr_Vreset.text():
+                self.read_addr(self.e_addr_Vreset.text())
+            elif self.asic_load_click and _addr == self.e_addr_Dsub.text():
+                self.read_addr(self.e_addr_Dsub.text())
+            elif self.asic_load_click and _addr == self.e_addr_Vbiasgate.text():
+                self.read_addr(self.e_addr_Vbiasgate.text())
+            elif self.asic_load_click and _addr == self.e_addr_Vrefmain.text():
+                self.read_addr(self.e_addr_Vrefmain.text())
+            elif self.asic_load_click and _addr == self.e_addr_input.text():
+                self.read_addr(self.e_read_input.text())
+
+        elif param[0] == CMD_READASICREG:
+            _addr = str(hex(int(param[1])))[2:6]
+            _text = str(hex(int(param[2])))[2:6]
+            
+            if _addr == self.e_addr_Vreset.text():
+                self.e_read_Vreset.setText(_text)
+            elif _addr == self.e_addr_Dsub.text():
+                self.e_read_Dsub.setText(_text)
+            elif _addr == self.e_addr_Vbiasgate.text():
+                self.e_read_Vbiasgate.setText(_text)
+            elif _addr == self.e_addr_Vrefmain.text():
+                self.e_read_Vrefmain.setText(_text)
+            else:
+                self.e_read_input.setText(_text)
+
+        elif param[0] == CMD_GETTELEMETRY:
+            self.QWidgetBtnColor(self.btn_get_telemetry, "black", "white")
+
         #------------------------------
 
         elif param[0] == CMD_INITIALIZE2_ICS:
@@ -234,7 +398,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
             self.producer_ics.send_message(self.dcs_q, msg)
 
         elif param[0] == CMD_SETFSPARAM_ICS:
-            msg = "%s %s %.3f %s " % (CMD_SETFSPARAM, IAM, float(param[1]), param[2])   #folder_name
+            msg = "%s %s %.3f %s " % (CMD_SETFSPARAM, IAM, float(param[1]), param[2])
             self.producer_ics.send_message(self.dcs_q, msg)
 
         elif param[0] == CMD_STOPACQUISITION_ICS:
@@ -244,7 +408,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
 
     def set_param_ui(self, resets, reads, groups, drops, ramps):
-        if self.core.samplingMode == UTR_MODE:
+        if self.samplingMode == UTR_MODE:
             self.e_reads.setEnabled(True)
             self.e_groups.setEnabled(True)
             self.e_drops.setEnabled(True)
@@ -268,7 +432,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
             self.e_fowler_number.setText(str(reads))
 
-            if self.core.samplingMode == FOWLER_MODE:
+            if self.samplingMode == FOWLER_MODE:
                 
                 self.e_exp_time.setEnabled(True)
                 self.e_fowler_number.setEnabled(False)
@@ -307,6 +471,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.radio_exp_time.clicked.connect(self.judge_exp_time)
         self.radio_fowler_number.clicked.connect(self.judge_fowler_number)
 
+        #self.e_fowler_number.returnPressed.connect(self.judge_param)
+
         self.btn_set_param.clicked.connect(self.set_parameter)
 
         self.chk_ROI_mode.clicked.connect(self.set_ROImode)
@@ -321,6 +487,9 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.btn_connect_icsq.setHidden(True)
         self.btn_connect_guiq.setHidden(True)
         self.btn_connect_coreq.setHidden(True)
+        #self.btn_connect_icsq.clicked.connect(self.connect_ics_q)
+        #self.btn_connect_guiq.clicked.connect(self.connect_gui_q)
+        #self.btn_connect_coreq.clicked.connect(self.connect_core_q)
 
         # path
         self.btn_find_config_dir.clicked.connect(lambda: self.find_dir_file(CONFIG_DIR))
@@ -372,100 +541,90 @@ class MainWindow(Ui_Dialog, QMainWindow):
             
 
     def initialize1(self):
+
         if self.busy:
             return
         self.busy = True
 
         self.QWidgetBtnColor(self.btn_initialize1, "yellow", "blue")
-        if self.core.Initialize(int(self.e_timeout.text())):
-            self.busy = False
-            self.init1 = True
-            self.QWidgetBtnColor(self.btn_initialize1, "white", "green")
 
-            info = "%s (%s)" % (self.label_ver.text(), self.core.macieSN)
-            self.label_ver.setText(info)
-            self.btn_initialize1.setEnabled(False)
+        msg = "%s %s" % (CMD_INITIALIZE1, self.e_timeout.text())
+        self.producer.send_message(self.gui_q, msg)
 
 
     def initialize2(self):
+
         if self.busy:
             return
         self.busy = True
 
         self.QWidgetBtnColor(self.btn_initialize2, "yellow", "blue")
-        if self.core.Initialize2():
-            self.busy = False
-            self.QWidgetBtnColor(self.btn_initialize2, "black", "white")
+
+        self.producer.send_message(self.gui_q, CMD_INITIALIZE2)
 
 
     def reset(self):
+
         if self.busy:
             return
         self.busy = True
 
         self.QWidgetBtnColor(self.btn_reset, "yellow", "blue")
 
-        if self.core.ResetASIC():
-            self.busy = False
-            self.QWidgetBtnColor(self.btn_reset, "black", "white")
+        self.producer.send_message(self.gui_q, CMD_RESET)
 
 
     def downloadMCD(self):
+
         if self.busy:
             return
         self.busy = True
 
         self.QWidgetBtnColor(self.btn_download_MCD, "yellow", "blue")
 
-        if self.core.DownloadMCD():
-            self.busy = False
-            self.QWidgetBtnColor(self.btn_download_MCD, "black", "white")
+        self.producer.send_message(self.gui_q, CMD_DOWNLOAD)
 
 
     def set_detector(self):
+
         if self.busy:
             return
         self.busy = True
 
         self.QWidgetBtnColor(self.btn_set_detector, "yellow", "blue")
-        if self.core.SetDetector(MUX_TYPE, int(self.cmb_ouput_channels.currentText())):
-            self.busy = False
-            self.QWidgetBtnColor(self.btn_set_detector, "black", "white")
+
+        msg = "%s %d %s" % (CMD_SETDETECTOR, MUX_TYPE, self.cmb_ouput_channels.currentText())
+        self.producer.send_message(self.gui_q, msg)
 
 
     def err_count(self):
+
         if self.busy:
             return
         self.busy = True
 
         self.QWidgetBtnColor(self.btn_error_cnt, "yellow", "blue")
-        if self.core.GetErrorCounters():
-            self.busy = False
-            self.QWidgetBtnColor(self.btn_error_cnt, "black", "white")
 
-            self.read_addr(self.e_addr_Vreset.text())
-            self.read_addr(self.e_addr_Dsub.text())
-            self.read_addr(self.e_addr_Vbiasgate.text())
-            self.read_addr(self.e_addr_Vrefmain.text())
+        self.producer.send_message(self.gui_q, CMD_ERRCOUNT)
 
 
     def click_UTR(self):
-        self.core.samplingMode = UTR_MODE
+        self.samplingMode = UTR_MODE
         self.set_param_ui(1, 1, 1, 0, 1)
 
 
     def click_CDS(self):
-        self.core.samplingMode = CDS_MODE
+        self.samplingMode = CDS_MODE
         self.set_param_ui(1, 1, 1, T_minFowler, 1)
 
 
     def click_CDSNoise(self):
-        self.core.samplingMode = CDSNOISE_MODE
+        self.samplingMode = CDSNOISE_MODE
         self.set_param_ui(1, 1, 1, T_minFowler, 2)
 
 
     def click_Fowler(self):
-        self.core.samplingMode = FOWLER_MODE
+        self.samplingMode = FOWLER_MODE
         self.set_param_ui(1, 1, 1, T_minFowler, 1)
 
 
@@ -487,42 +646,43 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
     def judge_param(self):
         # calculation fowler number & exp time
-        self.core.expTime = float(self.e_exp_time.text())
+        self.expTime = float(self.e_exp_time.text())
         _fowler_num = int(self.e_fowler_number.text())
 
         _fowler_time = float(self.e_drops.text())
 
         if self.radio_exp_time.isChecked():
-            _max_fowler_number = int((self.core.expTime - T_minFowler) / T_frame)
+            _max_fowler_number = int((self.expTime - T_minFowler) / T_frame)
             if _fowler_num > _max_fowler_number:
                 #dialog box
                 QMessageBox.warning(self, WARNING, "please change 'exposure time'!")
-                self.log.send(IAM, WARNING, "please change 'exposure time'!")
+                self.log.send(self._iam, WARNING, "please change 'exposure time'!")
                 return False
 
         elif self.radio_fowler_number.isChecked():
-            _fowler_time = self.core.expTime - T_frame * _fowler_num
+            _fowler_time = self.expTime - T_frame * _fowler_num
             if _fowler_time < T_minFowler:
                 #dialog box
                 QMessageBox.warning(self, WARNING, "please change 'fowler sampling number'!")
-                self.log.send(IAM, WARNING, "please change 'fowler sampling number'!")
+                self.log.send(self._iam, WARNING, "please change 'fowler sampling number'!")
                 return False            
 
         else:
-            self.log.send(IAM, WARNING, "Please select 'Exp. Time' or 'N. Fowler' for judgement!")
+            self.log.send(self._iam, WARNING, "Please select 'Exp. Time' or 'N. Fowler' for judgement!")
             return False
 
         return True
         
 
     def set_parameter(self):
+
         if self.busy:
             return
         self.busy = True
 
         self.QWidgetBtnColor(self.btn_set_param, "yellow", "blue")
 
-        if self.core.samplingMode == FOWLER_MODE and self.judge_param() == False:
+        if self.samplingMode == FOWLER_MODE and self.judge_param() == False:
             self.busy = False
             return
 
@@ -531,26 +691,28 @@ class MainWindow(Ui_Dialog, QMainWindow):
         groups = int(self.e_groups.text())
         ramps = int(self.e_ramps.text())
 
+        msg = "%s %d" % (CMD_SETFSMODE, self.samplingMode)
+        self.producer.send_message(self.gui_q, msg)
+
         self.cal_waittime = 0.0
-        if self.core.samplingMode == UTR_MODE:
+        if self.samplingMode == UTR_MODE:
             drops = int(self.e_drops.text())
 
-            self.core.expTime = (T_frame * reads * groups) + (T_frame * drops * (groups -1 ))
-            self.cal_waittime = T_br + ((T_frame * resets) + self.core.expTime) * ramps
-            #print('---------------')
-            #print(resets, reads, groups, drops, ramps)
-            #print('---------------')
+            self.expTime = (T_frame * reads * groups) + (T_frame * drops * (groups -1 ))
+            self.cal_waittime = T_br + ((T_frame * resets) + self.expTime) * ramps
+            print('---------------')
+            print(resets, reads, groups, drops, ramps)
+            print('---------------')
             
-            if self.core.SetRampParam(resets, reads, groups, drops, ramps):
-                self.busy = False
-                self.QWidgetBtnColor(self.btn_set_param, "black", "white")
+            msg = "%s %.3f %d %d %d %d %d" % (CMD_SETRAMPPARAM, self.expTime, resets, reads, groups, drops, ramps)
+            self.producer.send_message(self.gui_q, msg)
 
-            str_exp_time = "%.3f" % self.core.expTime
+            str_exp_time = "%.3f" % self.expTime
             self.e_exp_time.setText(str_exp_time)     
 
         else:
-            self.core.expTime = float(self.e_exp_time.text())
-            if self.core.samplingMode == FOWLER_MODE:
+            self.expTime = float(self.e_exp_time.text())
+            if self.samplingMode == FOWLER_MODE:
                 #if self.radio_fowler_number.isChecked():
                 self.e_reads.setText(self.e_fowler_number.text())
                 reads = int(self.e_reads.text())
@@ -558,24 +720,23 @@ class MainWindow(Ui_Dialog, QMainWindow):
                     self.e_reads.setText(self.e_fowler_number.text())
                     reads = int(self.e_reads.text())
 
-                fowlerTime = self.core.expTime - T_frame * reads
+                fowlerTime = self.expTime - T_frame * reads
                 str_fowlerTime = "%.3f" % fowlerTime
                 
                 self.e_drops.setText(str_fowlerTime)
             
             else:
                 fowlerTime = float(self.e_drops.text())
-                self.core.expTime = fowlerTime + T_frame * reads
+                self.expTime = fowlerTime + T_frame * reads
 
-                str_exp_time = "%.3f" % self.core.expTime
+                str_exp_time = "%.3f" % self.expTime
                 self.e_exp_time.setText(str_exp_time)
 
             self.e_reads.setText(self.e_fowler_number.text())
             self.cal_waittime = T_br + ((T_frame * resets) + fowlerTime + (2 * T_frame * reads)) * ramps
   
-            if self.core.SetFSParam(resets, reads, groups, fowlerTime, ramps):
-                self.busy = False
-                self.QWidgetBtnColor(self.btn_set_param, "black", "white")
+            msg = "%s %.3f %d %d %d %.3f %d" % (CMD_SETFSPARAM, self.expTime, resets, reads, groups, fowlerTime, ramps)
+            self.producer.send_message(self.gui_q, msg)
         
         str_caltime = "%.3f" % self.cal_waittime
         self.label_calculated_time.setText(str_caltime)
@@ -604,10 +765,12 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.QWidgetBtnColor(self.btn_acquireramp, "yellow", "blue")
 
         if self.chk_ROI_mode.isChecked():
-            self.core.x_start = int(self.e_x_start.text())
-            self.core.x_stop = int(self.e_x_stop.text())
-            self.core.y_start = int(self.e_y_start.text())
-            self.core.y_stop = int(self.e_y_stop.text())
+            self.x_start = int(self.e_x_start.text())
+            self.x_stop = int(self.e_x_stop.text())
+            self.y_start = int(self.e_y_start.text())
+            self.y_stop = int(self.e_y_stop.text())
+            msg = "%s %d %d %d %d" % (CMD_SETWINPARAM, self.x_start, self.x_stop, self.y_start, self.y_stop)
+            self.producer.send_message(self.gui_q, msg)
         
         self.cur_cnt += 1
 
@@ -622,44 +785,19 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.elapsed = ti.time()
         self.elapsed_timer.start()
 
-        if self.core.AcquireRamp():
-            if self.core.ImageAcquisition():
-                self.busy = False
-                val = "%.3f" % self.core.measured_durationT
-                self.label_measured_time.setText(val)
-                
-                if self.chk_autosave.isChecked():
-                    self.fitsfullpath = self.core.file_name
-                    file = self.core.file_name.split("/")
-                    path = ""
-                    for i in file[1:-1]:
-                        path += "/"
-                        path += i
-                    self.e_user_dir.setText(path)
-                    self.e_user_file.setText(file[-1][:-5] + "_")
-
-                self.QWidgetBtnColor(self.btn_acquireramp, "black", "white")
-
-                self.cur_prog_step = 100
-                self.prog_sts.setValue(self.cur_prog_step)
-
-                show_cur_cnt = "%d / %s" % (self.cur_cnt, self.e_repeat.text())
-                self.label_cur_num.setText(show_cur_cnt)
-                if self.cur_cnt < int(self.e_repeat.text()):
-                    self.btn_acquireramp.click()
-                else:
-                    self.cur_cnt = 0
+        msg = "%s %d" % (CMD_ACQUIRERAMP, self.chk_ROI_mode.isChecked())
+        self.producer.send_message(self.gui_q, msg)  
 
         
     def show_progressbar(self):
         if self.cur_prog_step >= 100 or self.stop_clicked:
-            #self.log.send(IAM, INFO, "progress bar end!!!")
+            #self.log.send(self._iam, INFO, "progress bar end!!!")
             self.prog_timer.stop()
             return
         
         self.cur_prog_step += 1
         self.prog_sts.setValue(self.cur_prog_step)       
-        #self.log.send(IAM, DEBUG, self.cur_prog_step)
+        #self.log.send(self._iam, DEBUG, self.cur_prog_step)
 
 
     def show_elapsed(self):
@@ -679,13 +817,13 @@ class MainWindow(Ui_Dialog, QMainWindow):
             self.prog_timer.stop()
             self.elapsed_timer.stop()
             self.stop_clicked = True
-
-        if self.core.StopAcquisition():
-            pass
+        
+        self.producer.send_message(self.gui_q, CMD_STOPACQUISITION)
 
 
     def show_fits(self):
-        self.core.showfits = bool(self.chk_show_fits.isChecked())
+        msg = "%s %d" % (CMD_SHOWFITS, self.chk_show_fits.isChecked())
+        self.producer.send_message(self.gui_q, msg)
 
         
     def use_saveAs(self):
@@ -723,9 +861,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
         self.QWidgetBtnColor(self.btn_get_telemetry, "yellow", "blue")
 
-        if self.core.GetTelemetry():
-            self.busy = False
-            self.QWidgetBtnColor(self.btn_get_telemetry, "black", "white")
+        self.producer.send_message(self.gui_q, CMD_GETTELEMETRY)
 
 
     def find_dir_file(self, find_option):
@@ -734,7 +870,6 @@ class MainWindow(Ui_Dialog, QMainWindow):
             folder = QFileDialog.getExistingDirectory(self, "Select Directory", loader)
             if folder:
                 self.e_img_dir.setText(folder)
-                self.core.exe_path = folder
 
         else:
             loader = self.e_config_dir.text()
@@ -742,21 +877,18 @@ class MainWindow(Ui_Dialog, QMainWindow):
             if find_option == CONFIG_DIR:   
                 if folder:
                     self.e_config_dir.setText(folder)
-                    self.core.loadfile_path = folder
             
             elif find_option == MACIE_FILE:
                 path = QFileDialog.getOpenFileName(self, "Choose File", folder, filter='*.mrf')
                 if path[0]:
                     file = path[0].split('/')
                     self.e_MACIE_reg.setText(file[-1])
-                    self.core.macie_file = file[-1]
             
             elif find_option == ASIC_FILE:
                 path = QFileDialog.getOpenFileName(self, "Choose File", folder, filter='*.mcd')
                 if path[0]:
                     file = path[0].split('/')
                     self.e_ASIC_firmware.setText(file[-1])
-                    self.core.asic_file = file[-1]
 
     
     def asic_load(self):        
@@ -772,64 +904,24 @@ class MainWindow(Ui_Dialog, QMainWindow):
         if value == "":
             return 
 
+        self.asic_load_click = click
+
         _addr = int("0x" + addr, 16)
         _value = int("0x" + value, 16)
 
-        res = self.core.write_ASIC_reg(_addr, _value)
-        if res == MACIE_OK:
-            result = RET_OK
-
-            _addr = str(hex(_addr))[2:6]
-
-            if click and _addr == self.e_addr_Vreset.text():
-                self.read_addr(self.e_addr_Vreset.text())
-            elif click and _addr == self.e_addr_Dsub.text():
-                self.read_addr(self.e_addr_Dsub.text())
-            elif click and _addr == self.e_addr_Vbiasgate.text():
-                self.read_addr(self.e_addr_Vbiasgate.text())
-            elif click and _addr == self.e_addr_Vrefmain.text():
-                self.read_addr(self.e_addr_Vrefmain.text())
-            elif click and _addr == self.e_addr_input.text():
-                self.read_addr(self.e_read_input.text())
-                
-        else:
-            result = RET_FAIL
-
-        msg = "WriteASICReg %s - h%04x = %04x" % (result, _addr, _value)
-        self.log.send(IAM, INFO, msg)
-
+        msg = "%s %d %d" % (CMD_WRITEASICREG, _addr, _value)
+        self.producer.send_message(self.gui_q, msg)
         
+
+
     def read_addr(self, addr):   
         if addr == "":
             return
 
         _addr = int("0x" + addr, 16)
 
-        val, sts = self.core.read_ASIC_reg(_addr)
-        if sts == MACIE_OK:
-            result = RET_OK
-            _value = val[0]
-
-            _addr = str(hex(_addr))[2:6]
-            _text = str(hex(_value))[2:6]
-            
-            if _addr == self.e_addr_Vreset.text():
-                self.e_read_Vreset.setText(_text)
-            elif _addr == self.e_addr_Dsub.text():
-                self.e_read_Dsub.setText(_text)
-            elif _addr == self.e_addr_Vbiasgate.text():
-                self.e_read_Vbiasgate.setText(_text)
-            elif _addr == self.e_addr_Vrefmain.text():
-                self.e_read_Vrefmain.setText(_text)
-            else:
-                self.e_read_input.setText(_text)
-        
-        else:
-            result = RET_FAIL
-            _vale = 0
-
-        msg = "ReadASICReg %s - h%04x = %04x" % (result, int(_addr), _value)     
-        self.log.send(IAM, INFO, msg)
+        msg = "%s %d" % (CMD_READASICREG, _addr)
+        self.producer.send_message(self.gui_q, msg)
 
 
     def QWidgetBtnColor(self, widget, textcolor, bgcolor=None):
