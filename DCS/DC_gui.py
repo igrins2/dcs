@@ -657,7 +657,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
             self.prog_timer.stop()
             return
         
-        self.cur_prog_step += 1
+        self.cur_prog_step += 100/self.cal_waittime
         self.prog_sts.setValue(self.cur_prog_step)       
         #self.log.send(IAM, DEBUG, self.cur_prog_step)
 
@@ -772,14 +772,14 @@ class MainWindow(Ui_Dialog, QMainWindow):
         if value == "":
             return 
 
-        _addr = int("0x" + addr, 16)
+        addr_n = int("0x" + addr, 16)
         _value = int("0x" + value, 16)
 
-        res = self.core.write_ASIC_reg(_addr, _value)
+        res = self.core.write_ASIC_reg(addr_n, _value)
         if res == MACIE_OK:
             result = RET_OK
 
-            _addr = str(hex(_addr))[2:6]
+            _addr = str(hex(addr_n))[2:6]
 
             if click and _addr == self.e_addr_Vreset.text():
                 self.read_addr(self.e_addr_Vreset.text())
@@ -795,7 +795,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
         else:
             result = RET_FAIL
 
-        msg = "WriteASICReg %s - h%04x = %04x" % (result, _addr, _value)
+        msg = "WriteASICReg %s - h%04x = %04x" % (result, addr_n, _value)
         self.log.send(IAM, INFO, msg)
 
         
@@ -803,14 +803,14 @@ class MainWindow(Ui_Dialog, QMainWindow):
         if addr == "":
             return
 
-        _addr = int("0x" + addr, 16)
+        addr_n = int("0x" + addr, 16)
 
-        val, sts = self.core.read_ASIC_reg(_addr)
+        val, sts = self.core.read_ASIC_reg(addr_n)
         if sts == MACIE_OK:
             result = RET_OK
             _value = val[0]
 
-            _addr = str(hex(_addr))[2:6]
+            _addr = str(hex(addr_n))[2:6]
             _text = str(hex(_value))[2:6]
             
             if _addr == self.e_addr_Vreset.text():
@@ -828,7 +828,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
             result = RET_FAIL
             _vale = 0
 
-        msg = "ReadASICReg %s - h%04x = %04x" % (result, int(_addr), _value)     
+        msg = "ReadASICReg %s - h%04x = %04x" % (result, addr_n, _value)
         self.log.send(IAM, INFO, msg)
 
 
