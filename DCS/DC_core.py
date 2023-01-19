@@ -72,7 +72,7 @@ FieldNames = [('date', str), ('time', str),
               ('shieldtop', float), ('air', float), 
               ('alert_status', str)]
 
-class DC():
+class DC(threading.Thread):
     def __init__(self, gui=False):
 
         self.gui = gui
@@ -957,7 +957,7 @@ class DC():
             self.log.send(self._iam, DEBUG, msg)
 
         byte = 0
-        for i in range(100):
+        for i in range(1000):
             byte = lib.MACIE_AvailableScienceData(self.handle)
             if byte >= getByte:
                 msg = "Available science data = %d bytes, Loop = %d" % (
