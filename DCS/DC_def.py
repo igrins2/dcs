@@ -136,8 +136,6 @@ CMD_GETTELEMETRY = "GetTelemetry"
 CMD_REQ_TEMP = "ReqTempInfo"
 ALIVE = "Alive"
 
-
-
-
-
-
+CMD_INITIALIZE2_ICS = "Initialize2_ics"
+CMD_SETFSPARAM_ICS = "SetFSParam_ics"
+CMD_ACQUIRERAMP_ICS = "ACQUIRERAMP_ics"

@@ -246,9 +246,6 @@ class MainWindow(Ui_Dialog, QMainWindow):
         elif param[0] == CMD_STOPACQUISITION:
             pass
 
-        #elif param[0] == CMD_CONNECT_ICS_Q:
-        #    self.btn_connect_icsq.setEnabled(int(param[1])*(-1))
-
         elif param[0] == CMD_WRITEASICREG:
             _addr = str(hex(int(param[1])))[2:6]
 
@@ -457,9 +454,9 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
     def set_detector(self):
 
-        if self.busy:
-            return
-        self.busy = True
+        #if self.busy:
+        #    return
+        #self.busy = True
 
         msg = "%s %d %s" % (CMD_SETDETECTOR, MUX_TYPE, self.cmb_ouput_channels.currentText())
         self.producer.send_message(self.gui_q, msg)
@@ -542,12 +539,12 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
     def set_parameter(self):
 
-        if self.busy:
-            return
-        self.busy = True
+        #if self.busy:
+        #    return
+        #self.busy = True
 
         if self.samplingMode == FOWLER_MODE and self.judge_param() == False:
-            self.busy = False
+            #self.busy = False
             return
 
         resets = int(self.e_resets.text())

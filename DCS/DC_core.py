@@ -3,7 +3,7 @@
 """
 Created on Mar 4, 2022
 
-Modified on Dec 30, 2022
+Modified on Jan 27, 2023
 
 @author: hilee
 """
@@ -23,7 +23,6 @@ import json
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 
 import Libs.SetConfig as sc
-#import Libs.rabbitmq_server as serv
 from Libs.MsgMiddleware import *
 from Libs.logger import *
 
@@ -74,13 +73,13 @@ FieldNames = [('date', str), ('time', str),
 
 class DC(threading.Thread):
     def __init__(self, gui=False):
-
-        self.gui = gui
         
         self.log = LOG(WORKING_DIR + "DCS")
 
         self._iam = "CORE"
         self._target = "GUI"
+
+        self.gui = gui
 
         if self.gui:
             self.log.send(self._iam, INFO, "start DCS core!!!")
@@ -112,7 +111,7 @@ class DC(threading.Thread):
         # local
         self.myid = cfg.get(IAM, 'myid')
         self.pwd = cfg.get(IAM, 'pwd')
-        #self.macieSN = int(cfg.get(IAM, 'sn'))
+        self.macieSN = int(cfg.get(IAM, 'sn'))
 
         # exchange - queue
         self.gui_ex = cfg.get("DC", 'gui_exchange')
@@ -178,6 +177,11 @@ class DC(threading.Thread):
         self.producer_hk = None
         self.consumer_hk = None
 
+        self.stop = False
+        self.dewar_info = False
+
+        self.param = ""
+
         if self.gui:
             self.connect_to_server_hk_ex()
             self.connect_to_server_hk_q()
@@ -187,6 +191,8 @@ class DC(threading.Thread):
 
             self.connect_to_server_ex()
             self.connect_to_server_q()
+
+        threading.Thread(target=self.control_MACIE).start()
 
 
     def __del__(self):
@@ -219,7 +225,6 @@ class DC(threading.Thread):
         self.consumer_hk.define_consumer(self.hk_dcs_q, self.callback_hk)
         
         th = threading.Thread(target=self.consumer_hk.start_consumer)
-        #th.daemon = True
         th.start()        
 
     
@@ -242,6 +247,7 @@ class DC(threading.Thread):
                 return None
 
             self.hk_dict = dict((k, t(v)) for (k, t), v in zip(FieldNames, HK_list))
+            self.dewar_info = True
 
        
     #-------------------------------
@@ -259,13 +265,19 @@ class DC(threading.Thread):
         self.consumer_ics.define_consumer(self.ics_q, self.callback_ics)
 
         th = threading.Thread(target=self.consumer_ics.start_consumer)
-        #th.daemon = True
         th.start() 
 
 
     def callback_ics(self, ch, method, properties, body):
         cmd = body.decode()
-        param = cmd.split()
+        self.param = cmd
+
+        param = self.param.split()
+        if param[0] == ALIVE:
+            if self.init1:
+                param = cmd.split()
+                msg = "%s %s" % (ALIVE, IAM)
+                self.producer_ics.send_message(self.dcs_q, msg)      
 
         if param[1] != IAM:
             return
@@ -293,41 +305,14 @@ class DC(threading.Thread):
         if self.init1 is False:
             msg = "%s %s TRY" % (param[0], IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
-            return
-
-        if param[0] == ALIVE:
-            if self.init1 and self.handle != 0:
-                param = cmd.split()
-                msg = "%s %s OK" % (ALIVE, IAM)
-                self.producer_ics.send_message(self.dcs_q, msg)        
+            return          
                 
-        elif param[0] == CMD_INITIALIZE2:
-            self.Initialize2(True)
-
-        elif param[0] == CMD_RESET:
-            self.ResetASIC(True)
-
-        elif param[0] == CMD_DOWNLOAD:
-            self.DownloadMCD(True)
-        
-        elif param[0] == CMD_SETDETECTOR:
-            self.SetDetector(int(param[3]), int(param[4]), True)
-            #self.err_count() ??
-        
-        elif param[0] == CMD_SETFSMODE:
-            self.samplingMode = int(param[3])
-            #self.log.send(IAM, INFO, param[3])
-
-        elif param[0] == CMD_SETFSPARAM:
-            self.expTime = float(param[3])
-            self.SetFSParam(int(param[4]), int(param[5]), int(param[6]), float(param[7]), int(param[8]), True)
-
-        elif param[0] == CMD_ACQUIRERAMP:
-            self.AcquireRamp()
-            self.ImageAcquisition(True)
-
         elif param[0] == CMD_STOPACQUISITION:
-            self.StopAcquisition(True)
+            self.stop = True
+            if self.StopAcquisition():
+                msg = "%s %s" % (param[0], IAM)
+                self.producer_ics.send_message(self.dcs_q, msg)
+
 
             
 
@@ -348,7 +333,6 @@ class DC(threading.Thread):
         self.consumer.define_consumer(self.gui_q, self.callback)
 
         th = threading.Thread(target=self.consumer.start_consumer)
-        #th.daemon = True
         th.start() 
 
         self.producer.send_message(self.core_q, CMD_CORESTART)
@@ -359,96 +343,150 @@ class DC(threading.Thread):
         msg = "receive: %s" % cmd
         self.log.send(self._iam, INFO, msg)
 
-        param = cmd.split()
+        self.param = cmd
 
+        param = self.param.split()
         if param[0] == CMD_VERSION:
             msg = "%s %s" % (CMD_VERSION, self.LibVersion())
             self.producer.send_message(self.core_q, msg)
 
         elif param[0] == CMD_SHOWFITS:
-            self.showfits = bool(param[1])
-        
+            self.showfits = bool(int(param[1]))
+            
         elif param[0] == CMD_EXIT:
             self.__del__()
-
-        #--------------------------------
-        elif param[0] == CMD_INITIALIZE1:            
-            self.Initialize(int(param[1]))
-
-        elif param[0] == CMD_INITIALIZE2:
-            self.Initialize2()
-
-        elif param[0] == CMD_RESET:
-            self.ResetASIC()
-                    
-        elif param[0] == CMD_DOWNLOAD:
-            self.DownloadMCD()
-        
-        elif param[0] == CMD_SETDETECTOR:
-            self.SetDetector(int(param[1]), int(param[2]))
-
-        elif param[0] == CMD_ERRCOUNT:
-            self.GetErrorCounters()       
 
         elif param[0] == CMD_SETFSMODE:
             self.samplingMode = int(param[1]) 
             #self.log.send(IAM, INFO, param[1])
-        
-        elif param[0] == CMD_SETRAMPPARAM:
-            self.expTime = float(param[1])
-            self.SetRampParam(int(param[2]), int(param[3]), int(param[4]), int(param[5]), int(param[6]))
-
-        elif param[0] == CMD_SETFSPARAM:
-            self.expTime = float(param[1])
-            self.SetFSParam(int(param[2]), int(param[3]), int(param[4]), float(param[5]), int(param[6]))
 
         elif param[0] == CMD_SETWINPARAM:
             self.x_start = int(param[1])
             self.x_stop = int(param[2])
             self.y_start = int(param[3])
             self.y_stop = int(param[4])
-
-        elif param[0] == CMD_ACQUIRERAMP:
-            if param[1] == "0":
-                self.AcquireRamp()
-                self.ImageAcquisition(True)
-            else:
-                self.AcquireRamp_window()
-                self.ImageAcquisition_window()
-
-        elif param[0] == CMD_STOPACQUISITION:
-            self.StopAcquisition()
-
-        #elif param[0] == CMD_CONNECT_ICS_Q:
-        #    self.connect_to_server_ics_q()
-
-        elif param[0] == CMD_WRITEASICREG:
-            res = self.write_ASIC_reg(int(param[1]), int(param[2]))
-            if res == MACIE_OK:
-                result = RET_OK
-                msg = "%s %s" % (CMD_WRITEASICREG, param[1])
-                self.producer.send_message(self.core_q, msg)
-            else:
-                result = RET_FAIL
-            msg = "WriteASICReg %s - h%04x = %04x" % (result, int(param[1]), int(param[2]))
-            self.log.send(self._iam, INFO, msg)
         
-        elif param[0] == CMD_READASICREG:
-            val, sts = self.read_ASIC_reg(int(param[1]))
-            if sts == MACIE_OK:
-                result = RET_OK
-                _value = val[0]
-                msg = "%s %s %d" % (CMD_READASICREG, param[1], _value)
-                self.producer.send_message(self.core_q, msg)
-            else:
-                result = RET_FAIL
-                _value = 0
+        elif param[0] == CMD_STOPACQUISITION:
+            self.stop = True
+            if self.StopAcquisition():
+                self.producer.send_message(self.core_q, CMD_STOPACQUISITION)
 
-            msg = "ReadASICReg %s - h%04x = %04x" % (result, int(param[1]), _value)     #need to check
-            self.log.send(self._iam, INFO, msg)
 
-        elif param[0] == CMD_GETTELEMETRY:
-            self.GetTelemetry()
+    def control_MACIE(self):
+        
+        while True:
+            if self.param == "":
+                continue     
+
+            param = self.param.split()
+            
+            if param[0] == CMD_INITIALIZE1:            
+                if self.Initialize(int(param[1])):
+                    msg = "%s %.2f %s" % (CMD_INITIALIZE1, lib.MACIE_LibVersion(), self.pCard[self.slctCard].contents.macieSerialNumber)
+                    self.producer.send_message(self.core_q, msg)
+
+            elif param[0] == CMD_INITIALIZE2:
+                if self.Initialize2():
+                    self.producer.send_message(self.core_q, CMD_INITIALIZE2)
+
+            elif param[0] == CMD_RESET:
+                if self.ResetASIC():
+                    self.producer.send_message(self.core_q, CMD_RESET)
+                        
+            elif param[0] == CMD_DOWNLOAD:
+                if self.DownloadMCD():
+                    self.producer.send_message(self.core_q, CMD_DOWNLOAD)
+            
+            elif param[0] == CMD_SETDETECTOR:
+                if self.SetDetector(int(param[1]), int(param[2])):
+                    self.producer.send_message(self.core_q, CMD_SETDETECTOR)
+
+            elif param[0] == CMD_ERRCOUNT:
+                if self.GetErrorCounters():
+                    self.producer.send_message(self.core_q, CMD_ERRCOUNT)
+
+            elif param[0] == CMD_SETRAMPPARAM:
+                self.expTime = float(param[1])
+                if self.SetRampParam(int(param[2]), int(param[3]), int(param[4]), int(param[5]), int(param[6])):
+                    self.producer.send_message(self.core_q, CMD_SETRAMPPARAM)
+
+            elif param[0] == CMD_SETFSPARAM:
+                self.expTime = float(param[1])
+                if self.SetFSParam(int(param[2]), int(param[3]), int(param[4]), float(param[5]), int(param[6])):
+                    self.producer.send_message(self.core_q, CMD_SETFSPARAM)
+
+            elif param[0] == CMD_ACQUIRERAMP:
+                if param[1] == "0":
+                    if self.AcquireRamp() is False:
+                        continue
+                    if self.ImageAcquisition():
+                        self.producer.send_message(self.core_q, CMD_ACQUIRERAMP)
+                else:
+                    if self.AcquireRamp_window() is False:
+                        continue
+                    if self.ImageAcquisition_window():
+                        self.producer.send_message(self.core_q, CMD_ACQUIRERAMP)
+
+            elif param[0] == CMD_WRITEASICREG:
+                res = self.write_ASIC_reg(int(param[1]), int(param[2]))
+                if res == MACIE_OK:
+                    result = RET_OK
+                    msg = "%s %s" % (CMD_WRITEASICREG, param[1])
+                    self.producer.send_message(self.core_q, msg)
+                else:
+                    result = RET_FAIL
+                msg = "WriteASICReg %s - h%04x = %04x" % (result, int(param[1]), int(param[2]))
+                self.log.send(self._iam, INFO, msg)
+            
+            elif param[0] == CMD_READASICREG:
+                val, sts = self.read_ASIC_reg(int(param[1]))
+                if sts == MACIE_OK:
+                    result = RET_OK
+                    _value = val[0]
+                    msg = "%s %s %d" % (CMD_READASICREG, param[1], _value)
+                    self.producer.send_message(self.core_q, msg)
+                else:
+                    result = RET_FAIL
+                    _value = 0
+
+                msg = "ReadASICReg %s - h%04x = %04x" % (result, int(param[1]), _value)     #need to check
+                self.log.send(self._iam, INFO, msg)
+
+            elif param[0] == CMD_GETTELEMETRY:
+                self.GetTelemetry()
+
+            #--------------------------------------------------------
+
+            elif param[0] == CMD_INITIALIZE2_ICS:
+                if self.Initialize2() is False:
+                    continue
+                if self.ResetASIC() is False:
+                    continue
+                if self.DownloadMCD() is False:
+                    continue
+                if self.SetDetector(MUX_TYPE, 32):
+                    msg = "%s %s" % (param[0], IAM)
+                    self.producer_ics.send_message(self.dcs_q, msg)
+
+            elif param[0] == CMD_SETFSPARAM_ICS:
+                self.samplingMode = FOWLER_MODE
+                self.expTime = float(param[3])
+                if self.SetFSParam(int(param[4]), int(param[5]), int(param[6]), float(param[7]), int(param[8])) is False:
+                    continue
+                if self.AcquireRamp() is False:
+                    continue
+                if self.ImageAcquisition():
+                    msg = "%s %s %.3f %s" % (param[0], IAM, self.measured_durationT, self.folder_name)
+                    self.producer_ics.send_message(self.dcs_q, msg)
+
+            elif param[0] == CMD_ACQUIRERAMP_ICS:
+                if self.AcquireRamp() is False:
+                    continue
+                if self.ImageAcquisition():
+                    msg = "%s %s %.3f %s" % (CMD_SETFSPARAM_ICS, IAM, self.measured_durationT, self.folder_name)
+                    self.producer_ics.send_message(self.dcs_q, msg)
+
+            self.param = ""
 
 
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -546,7 +584,7 @@ class DC(threading.Thread):
 
             if self.pCard == None or res == RET_FAIL:
                 self.log.send(self._iam, ERROR, RET_FAIL)
-                return
+                return None, None
                 
             macieSN = self.pCard[self.slctCard].contents.macieSerialNumber
             self.log.send(self._iam, INFO, str(macieSN))
@@ -561,11 +599,10 @@ class DC(threading.Thread):
 
             #if self.ip_addr == ipaddr:
 
-            return ipaddr
-            #return macieSN
+            return ipaddr, macieSN
 
         except:
-            return None
+            return None, None
 
 
     # GetHandle
@@ -579,7 +616,7 @@ class DC(threading.Thread):
         self.log.send(self._iam, INFO, msg)
 
 
-    def Initialize(self, timeout, ics = False):
+    def Initialize(self, timeout):
 
         # self.InitBuffer()
 
@@ -592,32 +629,22 @@ class DC(threading.Thread):
             return -2
         
         # 3. CheckInterfaces
-        _ip = self.CheckInterfaces()
-        if _ip == None:
-            return -3
-        while _ip != self.dcs_ip_addr:
+        _ip, _sn = self.CheckInterfaces()
+        while _ip != self.dcs_ip_addr and _sn != self.macieSN:
             ti.sleep(0.5)
-            _ip = self.CheckInterfaces()
-        print(_ip)
+            _ip, _sn = self.CheckInterfaces()
 
         # 4. GetHandle
         self.GetHandle()
 
         self.log.send(self._iam, INFO, "Initialize " + RET_OK)
 
-        if self.gui:
-            msg = "%s %s OK" % (CMD_INITIALIZE1, IAM)
-            self.producer_ics.send_message(self.dcs_q, msg)
-        
-            msg = "%s %.2f %s" % (CMD_INITIALIZE1, lib.MACIE_LibVersion(), self.pCard[self.slctCard].contents.macieSerialNumber)
-            self.producer.send_message(self.core_q, msg)
-
         self.init1 = True
 
-        return 1
+        return True
 
 
-    def Initialize2(self, ics = False):
+    def Initialize2(self):
 
         if self.handle == 0:
             return False
@@ -672,19 +699,10 @@ class DC(threading.Thread):
 
         self.log.send(self._iam, INFO, "Initialize2 " + RET_OK)
 
-        if self.gui is False:
-            return True
-
-        if ics:
-            msg = "%s %s OK" % (CMD_INITIALIZE2, IAM)
-            self.producer_ics.send_message(self.dcs_q, msg)
-        else:    
-            self.producer.send_message(self.core_q, CMD_INITIALIZE2)
-
         return True
 
 
-    def ResetASIC(self, ics = False):
+    def ResetASIC(self):
         if self.handle == 0:
             return False
 
@@ -702,19 +720,10 @@ class DC(threading.Thread):
 
         self.log.send(self._iam, INFO, "ResetASIC " + RET_OK)
 
-        if self.gui is False:
-            return True
-
-        if ics:
-            msg = "%s %s OK" % (CMD_RESET, IAM)
-            self.producer_ics.send_message(self.dcs_q, msg)
-        else:
-            self.producer.send_message(self.core_q, CMD_RESET)
-
         return True
         
 
-    def DownloadMCD(self, ics = False):
+    def DownloadMCD(self):
         if self.handle == 0:
             return False
 
@@ -730,16 +739,7 @@ class DC(threading.Thread):
         if self.GetAvailableASICs() == False:
             return False
 
-        self.log.send(self._iam, INFO, "DownloadMCD " + RET_OK)
-
-        if self.gui is False:
-            return True
-
-        if ics:
-            msg = "%s %s OK" % (CMD_DOWNLOAD, IAM)
-            self.producer_ics.send_message( self.dcs_q, msg)
-        else:
-            self.producer.send_message(self.core_q, CMD_DOWNLOAD)
+        self.log.send(self._iam, INFO, "DownloadMCD " + RET_OK)         
 
         return True
 
@@ -801,7 +801,7 @@ class DC(threading.Thread):
         return True
 
 
-    def SetDetector(self, muxType, outputs, ics = False):  # muxType = 2 (H2RG)
+    def SetDetector(self, muxType, outputs):  # muxType = 2 (H2RG)
         if self.handle == 0:
             return False
 
@@ -816,21 +816,12 @@ class DC(threading.Thread):
                 return False
 
         msg = "Set Detector (%d, %d) succeeded" % (muxType, outputs)
-        self.log.send(self._iam, INFO, msg)
-
-        if self.gui is False:
-            return True
-
-        if ics:
-            msg = "%s %s OK" % (CMD_SETDETECTOR, IAM)
-            self.producer_ics.send_message(self.dcs_q, msg)
-        else:
-            self.producer.send_message(self.core_q, CMD_SETDETECTOR)
+        self.log.send(self._iam, INFO, msg)            
 
         return True
 
 
-    def GetErrorCounters(self, ics = False):
+    def GetErrorCounters(self):
         if self.handle == 0:
             return
 
@@ -847,21 +838,12 @@ class DC(threading.Thread):
                 msg = "%d" % errArr[i]
                 self.log.send(self._iam, INFO, msg)
 
-        if self.gui is False:
-            return
 
-        if ics:
-            msg = "%s %s OK" % (CMD_ERRCOUNT, IAM)
-            self.producer_ics.send_message(self.dcs_q, msg)
-        else:
-            self.producer.send_message(self.core_q, CMD_ERRCOUNT)
-
-
-    def SetRampParam(self, p1, p2, p3, p4, p5, ics = False):  # p1~p5 : int
+    def SetRampParam(self, p1, p2, p3, p4, p5):  # p1~p5 : int
         if self.handle == 0:
             return False
 
-        self.resets, self.reads, self.groups, self.ramps = p1, p2, p3, p5
+        self.resets, self.reads, self.groups, self.drops, self.ramps = p1, p2, p3, p4, p5
 
         res = [0 for _ in range(8)]
 
@@ -889,21 +871,12 @@ class DC(threading.Thread):
                 return False
 
         msg = "SetRampParam(%d, %d, %d, %d, %d)" % (p1, p2, p3, p4, p5)
-        self.log.send(self._iam, INFO, msg)
-
-        if self.gui is False:
-            return True
-
-        if ics:
-            msg = "%s %s OK" % (CMD_SETRAMPPARAM, IAM)
-            self.producer_ics.send_message(self.dcs_q, msg)
-        else:
-            self.producer.send_message(self.core_q, CMD_SETRAMPPARAM)
+        self.log.send(self._iam, INFO, msg) 
 
         return True
 
 
-    def SetFSParam(self, p1, p2, p3, p4, p5, ics = False):  # p1~5:int, p4:double
+    def SetFSParam(self, p1, p2, p3, p4, p5):  # p1~5:int, p4:double
 
         self.resets, self.reads, self.groups, self.ramps = p1, p2, p3, p5
         self.fowlerTime = p4
@@ -947,16 +920,7 @@ class DC(threading.Thread):
                 return False
 
         msg = "SetFSParam(%d, %d, %d, %.3f, %d)" % (p1, p2, p3, p4, p5)
-        self.log.send(self._iam, INFO, msg)
-
-        if self.gui is False:
-            return True
-
-        if ics:
-            msg = "%s %s OK" % (CMD_SETFSPARAM, IAM)
-            self.producer_ics.send_message(self.dcs_q, msg)
-        else:
-            self.producer.send_message(self.core_q, CMD_SETFSPARAM)
+        self.log.send(self._iam, INFO, msg)           
 
         return True
 
@@ -965,6 +929,8 @@ class DC(threading.Thread):
 
         if self.handle == 0:
             return False
+
+        self.stop = False
 
         self.measured_startT = ti.time()
 
@@ -1039,6 +1005,7 @@ class DC(threading.Thread):
             return False
 
         self.log.send(self._iam, INFO, "Triggering succeeded")
+        #print(self.stop)
 
         return True
 
@@ -1123,29 +1090,20 @@ class DC(threading.Thread):
 
 
     
-    def StopAcquisition(self, ics = False):
+    def StopAcquisition(self):
         if self.handle == 0:
             return False
 
-        if lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_State, 0x8002, self.option) != MACIE_OK:
-            self.log.send(self._iam, WARNING, "Acquire Stop " + RET_FAIL)
-            return False
+        #if lib.MACIE_WriteASICReg(self.handle, self.slctASICs, ASICAddr_State, 0x8002, self.option) != MACIE_OK:
+        #    self.log.send(self._iam, WARNING, "Acquire Stop " + RET_FAIL)
+        #    return False
 
-        self.log.send(self._iam, INFO, "Acquire Stop " + RET_OK)
-
-        if self.gui is False:
-            return True
-
-        if ics:
-            msg = "%s %s OK" % (CMD_STOPACQUISITION, IAM)
-            self.producer_ics.send_message(self.dcs_q, msg)
-        else:
-            self.producer.send_message(self.core_q, CMD_STOPACQUISITION)
+        self.log.send(self._iam, INFO, "Acquire Stop " + RET_OK)            
 
         return True
 
 
-    def ImageAcquisition(self, ics = False):
+    def ImageAcquisition(self):
         if self.handle == 0:
             return False
 
@@ -1161,26 +1119,40 @@ class DC(threading.Thread):
         if self.samplingMode == UTR_MODE:
             getByte = FRAME_X * FRAME_Y * 2 * self.reads * self.groups * self.ramps
             # 1000 -> 10000: increse wating time for long exposure
-            triggerTimeout = triggerTimeout + ((T_frame * self.resets) + T_frame * self.drops * self.groups) * self.ramps * 100000
+
+            drops = self.drops
+            if drops == 0:
+                drops = 1                
+            
+            triggerTimeout = triggerTimeout + ((T_frame * self.resets) + T_frame * drops * self.groups) * self.ramps * 1000 #100000
             msg = "triggerTimeout 2: %.3f" % triggerTimeout
             self.log.send(self._iam, DEBUG, msg)
 
         else:
             getByte = FRAME_X * FRAME_Y * 2 * 2 * self.reads * self.ramps
-            triggerTimeout = triggerTimeout + ((T_frame * self.resets) + self.fowlerTime + (2 * T_frame * self.reads)) * self.ramps * 100000
+            triggerTimeout = triggerTimeout + ((T_frame * self.resets) + self.fowlerTime + (2 * T_frame * self.reads)) * self.ramps * 1000 #100000
             msg = "triggerTimeout 2: %.3f %.3f" % (self.fowlerTime, triggerTimeout)
             self.log.send(self._iam, DEBUG, msg)
 
         byte = 0
-        for i in range(100):
+        for i in range(int(triggerTimeout / 1000 * 2)):
+            if self.stop:
+                break
+
             byte = lib.MACIE_AvailableScienceData(self.handle)
             if byte >= getByte:
                 msg = "Available science data = %d bytes, Loop = %d" % (
                     byte, i)
                 self.log.send(self._iam, INFO, msg)
                 break
-            self.log.send(self._iam, INFO, "Wait....")
-            ti.sleep(triggerTimeout / 100 / 100000)
+            log = "Wait....(%d), stop(%d)" % (i, self.stop)
+            self.log.send(self._iam, INFO, log)
+            #ti.sleep(triggerTimeout / 100 / 1000)
+            ti.sleep(1)
+
+        if self.stop:
+            self.log.send(self._iam, INFO, "Stop: Image Acquiring")
+            return True
 
         if byte <= 0:
             self.log.send(self._iam, WARNING, "Trigger timeout: no available science data")
@@ -1211,21 +1183,12 @@ class DC(threading.Thread):
 
         lib.MACIE_CloseGigeScienceInterface(self.handle, self.slctMACIEs)
 
-        folder_name = self.WriteFitsFile(ics)
-        
-        if self.gui is False:
-            return True
-
-        if ics:
-            msg = "%s %s %s" % (CMD_ACQUIRERAMP, IAM, folder_name)
-            self.producer_ics.send_message(self.dcs_q, msg)
-        else:
-            self.producer.send_message(self.core_q, CMD_ACQUIRERAMP)        
+        self.folder_name = self.WriteFitsFile()
 
         return True
 
 
-    def ImageAcquisition_window(self, ics = False):
+    def ImageAcquisition_window(self):
         if self.handle == 0:
             return False
 
@@ -1273,16 +1236,7 @@ class DC(threading.Thread):
 
         lib.MACIE_CloseGigeScienceInterface(self.handle, self.slctMACIEs)
 
-        foldername = self.WriteFitsFile_window()
-
-        if self.gui is False:
-            return True
-
-        if ics:
-            msg = "%s %s %s" % (CMD_ACQUIRERAMP, IAM, foldername)
-            self.producer_ics.send_message(self.dcs_q, msg)
-        else:
-            self.producer.send_message(self.core_q, CMD_ACQUIRERAMP)
+        self.folder_name = self.WriteFitsFile_window()
 
         return True
 
@@ -1296,7 +1250,7 @@ class DC(threading.Thread):
 
 
         
-    def WriteFitsFile(self, ics):
+    def WriteFitsFile(self):
         self.log.send(self._iam, INFO, "Write Fits file now....")
 
         _t = datetime.datetime.utcnow()
@@ -1329,7 +1283,7 @@ class DC(threading.Thread):
                     for read in range(self.reads):
 
                         filename = "%sH2RG_R%02d_M%02d_N%02d.fits" % (path, ramp + 1, group+1, read + 1)
-                        sts = self.save_fitsfile_sub(idx, filename, cur_datetime, ramp+1, group+1, read+1, ics)
+                        sts = self.save_fitsfile_sub(idx, filename, cur_datetime, ramp+1, group+1, read+1)
 
                         if sts != MACIE_OK:
                             self.log.send(self._iam, ERROR, self.GetErrMsg())
@@ -1339,9 +1293,9 @@ class DC(threading.Thread):
 
                         idx += 1
 
-            measured_durationT = ti.time() - self.measured_startT
+            self.measured_durationT = ti.time() - self.measured_startT
             if self.gui:
-                msg = "%s %.3f %s" % (CMD_MEASURETIME, measured_durationT, filename)
+                msg = "%s %.3f %s" % (CMD_MEASURETIME, self.measured_durationT, filename)
                 self.producer.send_message(self.core_q, msg)
 
             if self.showfits and self.ramps == 1 and self.groups == 1 and self.reads == 1:
@@ -1354,7 +1308,7 @@ class DC(threading.Thread):
         elif self.samplingMode == CDS_MODE:  # ramp=1, group=1, read=1
             for read in range(self.reads*2):
                 filename = "%sH2RG_R01_M01_N%02d.fits" % (path, read + 1)
-                sts = self.save_fitsfile_sub(idx, filename, cur_datetime, 1, 1, read+1, ics)
+                sts = self.save_fitsfile_sub(idx, filename, cur_datetime, 1, 1, read+1)
 
                 if sts != MACIE_OK:
                     self.log.send(self._iam, ERROR, self.GetErrMsg())
@@ -1368,7 +1322,7 @@ class DC(threading.Thread):
             for ramp in range(self.ramps):
                 for read in range(self.reads*2):
                     filename = "%sH2RG_R%02d_M01_N%02d.fits" % (path, ramp + 1, read + 1)
-                    sts = self.save_fitsfile_sub(idx, filename, cur_datetime, ramp + 1, 1, read+1, ics)
+                    sts = self.save_fitsfile_sub(idx, filename, cur_datetime, ramp + 1, 1, read+1)
 
                     if sts != MACIE_OK:
                         self.log.send(self._iam, ERROR, self.GetErrMsg())
@@ -1382,7 +1336,7 @@ class DC(threading.Thread):
             for group in range(2):
                 for read in range(self.reads):
                     filename = "%sH2RG_R01_M%02d_N%02d.fits" % (path, group+1, read + 1)
-                    sts = self.save_fitsfile_sub(idx, filename, cur_datetime, 1, group+1, read+1, ics)
+                    sts = self.save_fitsfile_sub(idx, filename, cur_datetime, 1, group+1, read+1)
 
                     if sts != MACIE_OK:
                         self.log.send(self._iam, ERROR, self.GetErrMsg())
@@ -1436,9 +1390,9 @@ class DC(threading.Thread):
         tmp = "fowler calculation time: %.3f" % duration
         self.log.send(self._iam, INFO, tmp)
         
-        measured_durationT = ti.time() - self.measured_startT
+        self.measured_durationT = ti.time() - self.measured_startT
         if self.gui:
-            msg = "%s %.3f %s" % (CMD_MEASURETIME, measured_durationT, path + "Result/" + filename)
+            msg = "%s %.3f %s" % (CMD_MEASURETIME, self.measured_durationT, path + "Result/" + filename)
             self.producer.send_message(self.core_q, msg)
 
         if self.showfits:
@@ -1482,7 +1436,7 @@ class DC(threading.Thread):
             
 
 
-    def save_fitsfile_sub(self, idx, filename, cur_datetime, ramp, group, read, ics):
+    def save_fitsfile_sub(self, idx, filename, cur_datetime, ramp, group, read):
         
         header_array = MACIE_FitsHdr * FITS_HDR_CNT
         pHeaders = header_array()
@@ -1567,7 +1521,7 @@ class DC(threading.Thread):
 
         #-------------------------------------------------------------------------------------
         #temperature
-        if ics:
+        if self.dewar_info:
             pressure = "%.2e" % self.hk_dict["pressure"]
             pHeaders[header_cnt] = MACIE_FitsHdr(key="T_PRESSU".encode(), valType=HDR_STR, sVal=pressure.encode(), comment="Dewar Vacuum Pressure".encode())
             header_cnt += 1
