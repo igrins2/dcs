@@ -239,7 +239,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
             show_cur_cnt = "%d / %s" % (self.cur_cnt, self.e_repeat.text())
             self.label_cur_num.setText(show_cur_cnt)
             if self.cur_cnt < int(self.e_repeat.text()):
-                self.acquireramp()
+                #self.acquireramp()
+                self.btn_acquireramp.click()
             else:
                 self.cur_cnt = 0
 

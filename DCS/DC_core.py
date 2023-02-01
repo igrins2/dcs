@@ -196,6 +196,9 @@ class DC(threading.Thread):
 
 
     def __del__(self):
+
+        self.MemoryFree()
+
         if self.gui:
             self.log.send(self._iam, INFO, "DCS core closing...")
 
@@ -427,6 +430,8 @@ class DC(threading.Thread):
                     if self.ImageAcquisition_window():
                         self.producer.send_message(self.core_q, CMD_ACQUIRERAMP)
 
+                
+
             elif param[0] == CMD_WRITEASICREG:
                 res = self.write_ASIC_reg(int(param[1]), int(param[2]))
                 if res == MACIE_OK:
@@ -475,14 +480,16 @@ class DC(threading.Thread):
                     continue
                 if self.AcquireRamp() is False:
                     continue
-                if self.ImageAcquisition():
+                if self.ImageAcquisition(False):
                     msg = "%s %s %.3f %s" % (param[0], IAM, self.measured_durationT, self.folder_name)
-                    self.producer_ics.send_message(self.dcs_q, msg)
+                else:
+                    msg = "%s %s" % (CMD_STOPACQUISITION, IAM)
+                self.producer_ics.send_message(self.dcs_q, msg)
 
             elif param[0] == CMD_ACQUIRERAMP_ICS:
                 if self.AcquireRamp() is False:
                     continue
-                if self.ImageAcquisition():
+                if self.ImageAcquisition(False):
                     msg = "%s %s %.3f %s" % (CMD_SETFSPARAM_ICS, IAM, self.measured_durationT, self.folder_name)
                     self.producer_ics.send_message(self.dcs_q, msg)
 
@@ -1103,7 +1110,7 @@ class DC(threading.Thread):
         return True
 
 
-    def ImageAcquisition(self):
+    def ImageAcquisition(self, local=True):
         if self.handle == 0:
             return False
 
@@ -1152,7 +1159,7 @@ class DC(threading.Thread):
 
         if self.stop:
             self.log.send(self._iam, INFO, "Stop: Image Acquiring")
-            return True
+            return False
 
         if byte <= 0:
             self.log.send(self._iam, WARNING, "Trigger timeout: no available science data")
@@ -1183,7 +1190,7 @@ class DC(threading.Thread):
 
         lib.MACIE_CloseGigeScienceInterface(self.handle, self.slctMACIEs)
 
-        self.folder_name = self.WriteFitsFile()
+        self.folder_name = self.WriteFitsFile(local)
 
         return True
 
@@ -1250,7 +1257,7 @@ class DC(threading.Thread):
 
 
         
-    def WriteFitsFile(self):
+    def WriteFitsFile(self, local = True):
         self.log.send(self._iam, INFO, "Write Fits file now....")
 
         _t = datetime.datetime.utcnow()
@@ -1294,11 +1301,11 @@ class DC(threading.Thread):
                         idx += 1
 
             self.measured_durationT = ti.time() - self.measured_startT
-            if self.gui:
+            if self.gui and local:
                 msg = "%s %.3f %s" % (CMD_MEASURETIME, self.measured_durationT, filename)
                 self.producer.send_message(self.core_q, msg)
 
-            if self.showfits and self.ramps == 1 and self.groups == 1 and self.reads == 1:
+            if local and self.showfits and self.ramps == 1 and self.groups == 1 and self.reads == 1:
                 ds9 = WORKING_DIR + 'DCS/ds9'
                 #subprocess.run([ds9, '-b', filename, '-o', 'newfile'], shell = True)
                 subprocess.Popen([ds9, filename])
@@ -1391,11 +1398,11 @@ class DC(threading.Thread):
         self.log.send(self._iam, INFO, tmp)
         
         self.measured_durationT = ti.time() - self.measured_startT
-        if self.gui:
+        if self.gui and local:
             msg = "%s %.3f %s" % (CMD_MEASURETIME, self.measured_durationT, path + "Result/" + filename)
             self.producer.send_message(self.core_q, msg)
 
-        if self.showfits:
+        if local and self.showfits:
             ds9 = WORKING_DIR + 'DCS/ds9'
             #subprocess.run([ds9, '-b', lastfilename, '-o', 'newfile'], shell = True)
             #subprocess.run([ds9, filename], shell = True)
