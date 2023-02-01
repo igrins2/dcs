@@ -214,20 +214,21 @@ class MainWindow(Ui_Dialog, QMainWindow):
             pass
         elif param[0] == CMD_RESET:
             pass
-        elif param[0] == CMD_DOWNLOAD:
-            pass
-        elif param[0] == CMD_SETDETECTOR:
-            pass
-        elif param[0] == CMD_ERRCOUNT:
-            self.read_addr(self.e_addr_Vreset.text())
-            self.read_addr(self.e_addr_Dsub.text())
-            self.read_addr(self.e_addr_Vbiasgate.text())
-            self.read_addr(self.e_addr_Vrefmain.text())
+        #elif param[0] == CMD_DOWNLOAD:
+        #    pass
+        #elif param[0] == CMD_SETDETECTOR:
+        #    pass
+        #elif param[0] == CMD_ERRCOUNT:
+        #    self.read_addr(self.e_addr_Vreset.text())
+        #    self.read_addr(self.e_addr_Dsub.text())
+        #    self.read_addr(self.e_addr_Vbiasgate.text())
+        #    self.read_addr(self.e_addr_Vrefmain.text())
 
         elif param[0] == CMD_SETRAMPPARAM:
-            pass
+            self.acquireramp()  
+
         elif param[0] == CMD_SETFSPARAM:
-            pass         
+            self.acquireramp()         
 
         elif param[0] == CMD_ACQUIRERAMP:
             self.prog_timer.stop()
@@ -335,9 +336,9 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.btn_initialize1.clicked.connect(self.initialize1)
         self.btn_initialize2.clicked.connect(self.initialize2)
         self.btn_reset.clicked.connect(self.reset)
-        self.btn_download_MCD.clicked.connect(self.downloadMCD)
-        self.btn_set_detector.clicked.connect(self.set_detector)
-        self.btn_error_cnt.clicked.connect(self.err_count)
+        #self.btn_download_MCD.clicked.connect(self.downloadMCD)
+        #self.btn_set_detector.clicked.connect(self.set_detector)
+        #self.btn_error_cnt.clicked.connect(self.err_count)
 
         self.radio_UTR.clicked.connect(self.click_UTR)
         self.radio_CDS.clicked.connect(self.click_CDS)
@@ -349,23 +350,16 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
         #self.e_fowler_number.returnPressed.connect(self.judge_param)
 
-        self.btn_set_param.clicked.connect(self.set_parameter)
+        #self.btn_set_param.clicked.connect(self.set_parameter)
 
         self.chk_ROI_mode.clicked.connect(self.set_ROImode)
 
-        self.btn_acquireramp.clicked.connect(self.acquireramp)
+        self.btn_acquireramp.clicked.connect(self.set_parameter)
         self.btn_stop.clicked.connect(self.stop_acquistion)
 
         self.chk_show_fits.clicked.connect(self.show_fits)
 
         self.btn_get_telemetry.clicked.connect(self.get_telemetry)
-
-        self.btn_connect_icsq.setHidden(True)
-        self.btn_connect_guiq.setHidden(True)
-        self.btn_connect_coreq.setHidden(True)
-        #self.btn_connect_icsq.clicked.connect(self.connect_ics_q)
-        #self.btn_connect_guiq.clicked.connect(self.connect_gui_q)
-        #self.btn_connect_coreq.clicked.connect(self.connect_core_q)
 
         # path
         self.btn_find_config_dir.clicked.connect(lambda: self.find_dir_file(CONFIG_DIR))
@@ -432,6 +426,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
             return
         self.busy = True
 
+        msg = "%s %d %s" % (CMD_INITIALIZE2, MUX_TYPE, self.cmb_ouput_channels.currentText())
         self.producer.send_message(self.gui_q, CMD_INITIALIZE2)
 
 
@@ -443,7 +438,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
         self.producer.send_message(self.gui_q, CMD_RESET)
 
-
+    '''
     def downloadMCD(self):
 
         if self.busy:
@@ -451,8 +446,9 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.busy = True
 
         self.producer.send_message(self.gui_q, CMD_DOWNLOAD)
+    '''
 
-
+    '''
     def set_detector(self):
 
         #if self.busy:
@@ -461,6 +457,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
         msg = "%s %d %s" % (CMD_SETDETECTOR, MUX_TYPE, self.cmb_ouput_channels.currentText())
         self.producer.send_message(self.gui_q, msg)
+    '''
 
 
     def err_count(self):
