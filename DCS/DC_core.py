@@ -389,30 +389,24 @@ class DC(threading.Thread):
                     self.producer.send_message(self.core_q, msg)
 
             elif param[0] == CMD_INITIALIZE2:
-                if self.Initialize2() is False:
-                    continue
-                if self.ResetASIC() is False:
-                    continue
-                if self.DownloadMCD() is False:
-                    continue
-                if self.SetDetector(int(param[1]), int(param[2])):
+                if self.Initialize2():
                     self.producer.send_message(self.core_q, CMD_INITIALIZE2)
 
             elif param[0] == CMD_RESET:
                 if self.ResetASIC():
                     self.producer.send_message(self.core_q, CMD_RESET)
                         
-            #elif param[0] == CMD_DOWNLOAD:
-            #    if self.DownloadMCD():
-            #        self.producer.send_message(self.core_q, CMD_DOWNLOAD)
+            elif param[0] == CMD_DOWNLOAD:
+                if self.DownloadMCD():
+                    self.producer.send_message(self.core_q, CMD_DOWNLOAD)
             
-            #elif param[0] == CMD_SETDETECTOR:
-            #    if self.SetDetector(int(param[1]), int(param[2])):
-            #        self.producer.send_message(self.core_q, CMD_SETDETECTOR)
+            elif param[0] == CMD_SETDETECTOR:
+                if self.SetDetector(int(param[1]), int(param[2])):
+                    self.producer.send_message(self.core_q, CMD_SETDETECTOR)
 
-            #elif param[0] == CMD_ERRCOUNT:
-            #    if self.GetErrorCounters():
-            #        self.producer.send_message(self.core_q, CMD_ERRCOUNT)
+            elif param[0] == CMD_ERRCOUNT:
+                if self.GetErrorCounters():
+                    self.producer.send_message(self.core_q, CMD_ERRCOUNT)
 
             elif param[0] == CMD_SETRAMPPARAM:
                 self.expTime = float(param[1])
