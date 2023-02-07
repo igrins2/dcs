@@ -305,7 +305,7 @@ class DC(threading.Thread):
             
             return
 
-        if self.init1 is False:
+        if self.init1 == False:
             msg = "%s %s TRY" % (param[0], IAM)
             self.producer_ics.send_message(self.dcs_q, msg)
             return          
@@ -389,11 +389,11 @@ class DC(threading.Thread):
                     self.producer.send_message(self.core_q, msg)
 
             elif param[0] == CMD_INITIALIZE2:
-                if self.Initialize2() is False:
+                if self.Initialize2() == False:
                     continue
-                if self.ResetASIC() is False:
+                if self.ResetASIC() == False:
                     continue
-                if self.DownloadMCD() is False:
+                if self.DownloadMCD() == False:
                     continue
                 if self.SetDetector(int(param[1]), int(param[2])):
                     self.producer.send_message(self.core_q, CMD_INITIALIZE2)
@@ -416,27 +416,24 @@ class DC(threading.Thread):
 
             elif param[0] == CMD_SETRAMPPARAM:
                 self.expTime = float(param[1])
-                if self.SetRampParam(int(param[2]), int(param[3]), int(param[4]), int(param[5]), int(param[6])):
-                    self.producer.send_message(self.core_q, CMD_SETRAMPPARAM)
+                self.SetRampParam(int(param[2]), int(param[3]), int(param[4]), int(param[5]), int(param[6]))
 
             elif param[0] == CMD_SETFSPARAM:
                 self.expTime = float(param[1])
-                if self.SetFSParam(int(param[2]), int(param[3]), int(param[4]), float(param[5]), int(param[6])):
-                    self.producer.send_message(self.core_q, CMD_SETFSPARAM)
+                self.SetFSParam(int(param[2]), int(param[3]), int(param[4]), float(param[5]), int(param[6]))
 
             elif param[0] == CMD_ACQUIRERAMP:
+                print("acquire!!!!")
                 if param[1] == "0":
-                    if self.AcquireRamp() is False:
+                    if self.AcquireRamp() == False:
                         continue
                     if self.ImageAcquisition():
                         self.producer.send_message(self.core_q, CMD_ACQUIRERAMP)
                 else:
-                    if self.AcquireRamp_window() is False:
+                    if self.AcquireRamp_window() == False:
                         continue
                     if self.ImageAcquisition_window():
                         self.producer.send_message(self.core_q, CMD_ACQUIRERAMP)
-
-                
 
             elif param[0] == CMD_WRITEASICREG:
                 res = self.write_ASIC_reg(int(param[1]), int(param[2]))
@@ -469,11 +466,11 @@ class DC(threading.Thread):
             #--------------------------------------------------------
 
             elif param[0] == CMD_INITIALIZE2_ICS:
-                if self.Initialize2() is False:
+                if self.Initialize2() == False:
                     continue
-                if self.ResetASIC() is False:
+                if self.ResetASIC() == False:
                     continue
-                if self.DownloadMCD() is False:
+                if self.DownloadMCD() == False:
                     continue
                 if self.SetDetector(MUX_TYPE, 32):
                     msg = "%s %s" % (param[0], IAM)
@@ -482,9 +479,9 @@ class DC(threading.Thread):
             elif param[0] == CMD_SETFSPARAM_ICS:
                 self.samplingMode = FOWLER_MODE
                 self.expTime = float(param[3])
-                if self.SetFSParam(int(param[4]), int(param[5]), int(param[6]), float(param[7]), int(param[8])) is False:
+                if self.SetFSParam(int(param[4]), int(param[5]), int(param[6]), float(param[7]), int(param[8])) == False:
                     continue
-                if self.AcquireRamp() is False:
+                if self.AcquireRamp() == False:
                     continue
                 if self.ImageAcquisition(False):
                     msg = "%s %s %.3f %s" % (param[0], IAM, self.measured_durationT, self.folder_name)
@@ -493,7 +490,7 @@ class DC(threading.Thread):
                 self.producer_ics.send_message(self.dcs_q, msg)
 
             elif param[0] == CMD_ACQUIRERAMP_ICS:
-                if self.AcquireRamp() is False:
+                if self.AcquireRamp() == False:
                     continue
                 if self.ImageAcquisition(False):
                     msg = "%s %s %.3f %s" % (CMD_SETFSPARAM_ICS, IAM, self.measured_durationT, self.folder_name)

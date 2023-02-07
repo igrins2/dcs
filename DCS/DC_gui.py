@@ -33,7 +33,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
     def __init__(self, autostart=False):
         super().__init__()
         self.setupUi(self)
-        self.setWindowTitle("Detector Control System 0.2")
+        self.setWindowTitle("Detector Control System 1.0")
+        self.setFixedSize(906, 570)
 
         self.log = LOG(WORKING_DIR + "DCS")
 
@@ -354,7 +355,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
         self.chk_ROI_mode.clicked.connect(self.set_ROImode)
 
-        self.btn_acquireramp.clicked.connect(self.set_parameter)
+        self.btn_acquireramp.clicked.connect(self.acquireramp)
         self.btn_stop.clicked.connect(self.stop_acquistion)
 
         self.chk_show_fits.clicked.connect(self.show_fits)
@@ -427,7 +428,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.busy = True
 
         msg = "%s %d %s" % (CMD_INITIALIZE2, MUX_TYPE, self.cmb_ouput_channels.currentText())
-        self.producer.send_message(self.gui_q, CMD_INITIALIZE2)
+        self.producer.send_message(self.gui_q, msg)
 
 
     def reset(self):
@@ -459,7 +460,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.producer.send_message(self.gui_q, msg)
     '''
 
-
+    '''
     def err_count(self):
 
         if self.busy:
@@ -467,6 +468,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.busy = True
 
         self.producer.send_message(self.gui_q, CMD_ERRCOUNT)
+    '''
 
 
     def click_UTR(self):
@@ -543,7 +545,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
         if self.samplingMode == FOWLER_MODE and self.judge_param() == False:
             #self.busy = False
-            return
+            return False
 
         resets = int(self.e_resets.text())
         reads = int(self.e_reads.text())
@@ -597,6 +599,10 @@ class MainWindow(Ui_Dialog, QMainWindow):
         str_caltime = "%.3f" % self.cal_waittime
         self.label_calculated_time.setText(str_caltime)
 
+        return True
+
+
+
 
     def set_ROImode(self):
         if self.chk_ROI_mode.isChecked():
@@ -613,6 +619,11 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
     # thread
     def acquireramp(self):
+
+        if self.cur_cnt == 0:
+            if self.set_parameter() == False:
+                return
+
         if self.busy:
             return
         self.busy = True
