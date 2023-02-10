@@ -435,6 +435,22 @@ class DC(threading.Thread):
                     if self.ImageAcquisition_window():
                         self.producer.send_message(self.core_q, CMD_ACQUIRERAMP)
 
+            elif param[0] == CMD_ASICLOAD:
+                _read = [0 for _ in range(4)]
+                idx = 1
+                for i in range(4):
+                    _addr = int("0x" + param[idx], 16)
+                    _value = int("0x" + param[idx+1], 16)
+                    res = self.write_ASIC_reg(_addr, _value)
+                    if res == MACIE_OK:
+                        val, sts = self.read_ASIC_reg(_addr)
+                        if sts == MACIE_OK:
+                            _read[i] = val[0]                          
+                    idx += 2
+
+                msg = "%s %s %s %s %s" % (CMD_ASICLOAD, _read[0], _read[1], _read[2], _read[3])
+                self.producer.send_message(self.core_q, msg)
+
             elif param[0] == CMD_WRITEASICREG:
                 res = self.write_ASIC_reg(int(param[1]), int(param[2]))
                 if res == MACIE_OK:

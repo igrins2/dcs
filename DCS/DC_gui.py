@@ -126,7 +126,6 @@ class MainWindow(Ui_Dialog, QMainWindow):
         self.cur_cnt = 0
         self.cur_prog_step = 0
         self.fitsfullpath = ""
-        self.asic_load_click = False
 
         self.prog_sts.setValue(0)
 
@@ -205,16 +204,20 @@ class MainWindow(Ui_Dialog, QMainWindow):
                 self.e_user_dir.setText(path)
                 self.e_user_file.setText(file[-1][:-5] + "_")
 
-        elif param[0] == CMD_INITIALIZE1:            
+        elif param[0] == CMD_INITIALIZE1:          
+            self.QWidgetBtnColor(self.btn_initialize1, "white", "green") 
+
             info = "%s (%s)" % (param[1], param[2])
             self.label_ver.setText(info)
 
             self.btn_initialize1.setEnabled(False)
         
         elif param[0] == CMD_INITIALIZE2:
-            pass
+            self.QWidgetBtnColor(self.btn_initialize2, "black", "white")
+
         elif param[0] == CMD_RESET:
-            pass
+            self.QWidgetBtnColor(self.btn_reset, "black", "white")
+
         #elif param[0] == CMD_DOWNLOAD:
         #    pass
         #elif param[0] == CMD_SETDETECTOR:
@@ -232,6 +235,9 @@ class MainWindow(Ui_Dialog, QMainWindow):
             self.acquireramp()         
 
         elif param[0] == CMD_ACQUIRERAMP:
+
+            self.QWidgetBtnColor(self.btn_acquireramp, "black", "white")
+
             self.prog_timer.stop()
             self.cur_prog_step = 100
             self.prog_sts.setValue(self.cur_prog_step)
@@ -249,18 +255,24 @@ class MainWindow(Ui_Dialog, QMainWindow):
         elif param[0] == CMD_STOPACQUISITION:
             pass
 
+        elif param[0] == CMD_ASICLOAD:
+            self.e_read_Vreset.setText(str(hex(int(param[1])))[2:6])
+            self.e_read_Dsub.setText(str(hex(int(param[2])))[2:6])
+            self.e_read_Vbiasgate.setText(str(hex(int(param[3])))[2:6])
+            self.e_read_Vrefmain.setText(str(hex(int(param[4])))[2:6])
+
         elif param[0] == CMD_WRITEASICREG:
             _addr = str(hex(int(param[1])))[2:6]
 
-            if self.asic_load_click and _addr == self.e_addr_Vreset.text():
+            if _addr == self.e_addr_Vreset.text():
                 self.read_addr(self.e_addr_Vreset.text())
-            elif self.asic_load_click and _addr == self.e_addr_Dsub.text():
+            elif _addr == self.e_addr_Dsub.text():
                 self.read_addr(self.e_addr_Dsub.text())
-            elif self.asic_load_click and _addr == self.e_addr_Vbiasgate.text():
+            elif _addr == self.e_addr_Vbiasgate.text():
                 self.read_addr(self.e_addr_Vbiasgate.text())
-            elif self.asic_load_click and _addr == self.e_addr_Vrefmain.text():
+            elif _addr == self.e_addr_Vrefmain.text():
                 self.read_addr(self.e_addr_Vrefmain.text())
-            elif self.asic_load_click and _addr == self.e_addr_input.text():
+            elif _addr == self.e_addr_input.text():
                 self.read_addr(self.e_read_input.text())
 
         elif param[0] == CMD_READASICREG:
@@ -417,6 +429,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
             return
         self.busy = True
 
+        self.QWidgetBtnColor(self.btn_initialize1, "yellow", "blue")
+
         msg = "%s %s" % (CMD_INITIALIZE1, self.e_timeout.text())
         self.producer.send_message(self.gui_q, msg)
 
@@ -427,6 +441,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
             return
         self.busy = True
 
+        self.QWidgetBtnColor(self.btn_initialize2, "yellow", "blue")
+
         msg = "%s %d %s" % (CMD_INITIALIZE2, MUX_TYPE, self.cmb_ouput_channels.currentText())
         self.producer.send_message(self.gui_q, msg)
 
@@ -436,6 +452,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
         if self.busy:
             return
         self.busy = True
+
+        self.QWidgetBtnColor(self.btn_reset, "yellow", "blue")
 
         self.producer.send_message(self.gui_q, CMD_RESET)
 
@@ -628,6 +646,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
             return
         self.busy = True
 
+        self.QWidgetBtnColor(self.btn_acquireramp, "yellow", "blue")
+
         if self.chk_ROI_mode.isChecked():
             self.x_start = int(self.e_x_start.text())
             self.x_stop = int(self.e_x_stop.text())
@@ -684,6 +704,8 @@ class MainWindow(Ui_Dialog, QMainWindow):
     def stop_acquistion(self):
         if self.cur_prog_step == 0:
             return
+
+        self.QWidgetBtnColor(self.btn_acquireramp, "black", "white")
 
         self.prog_timer.stop()
         self.elapsed_timer.stop()
@@ -761,18 +783,18 @@ class MainWindow(Ui_Dialog, QMainWindow):
     
     def asic_load(self):        
 
-        self.write_addr(self.e_addr_Vreset.text(), self.e_write_Vreset.text(), True)
-        self.write_addr(self.e_addr_Dsub.text(), self.e_write_Dsub.text(), True)
-        self.write_addr(self.e_addr_Vbiasgate.text(), self.e_write_Vbiasgate.text(), True)
-        self.write_addr(self.e_addr_Vrefmain.text(), self.e_write_Vrefmain.text(), True)
+        msg = "%s %s %s %s %s %s %s %s %s" % (CMD_ASICLOAD, \
+            self.e_addr_Vreset.text(), self.e_write_Vreset.text(), \
+            self.e_addr_Dsub.text(), self.e_write_Dsub.text(), \
+                self.e_addr_Vbiasgate.text(), self.e_write_Vbiasgate.text(), \
+                    self.e_addr_Vrefmain.text(), self.e_write_Vrefmain.text())
+        self.producer.send_message(self.gui_q, msg)
 
 
 
     def write_addr(self, addr, value, click=False):
         if value == "":
             return 
-
-        self.asic_load_click = click
 
         _addr = int("0x" + addr, 16)
         _value = int("0x" + value, 16)
@@ -790,6 +812,15 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
         msg = "%s %d" % (CMD_READASICREG, _addr)
         self.producer.send_message(self.gui_q, msg)
+
+
+    def QWidgetBtnColor(self, widget, textcolor, bgcolor=None):
+        if bgcolor == None:
+            label = "QPushButton {color:%s}" % textcolor
+            widget.setStyleSheet(label)
+        else:
+            label = "QPushButton {color:%s;background:%s}" % (textcolor, bgcolor)
+            widget.setStyleSheet(label)
 
         
 if __name__ == "__main__":
