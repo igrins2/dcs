@@ -1323,6 +1323,7 @@ class DC(threading.Thread):
             if self.gui and local:
                 msg = "%s %.3f %s" % (CMD_MEASURETIME, self.measured_durationT, filename)
                 self.producer.send_message(self.core_q, msg)
+                ti.sleep(0.5)
 
             if local and self.showfits and self.ramps == 1 and self.groups == 1 and self.reads == 1:
                 ds9 = WORKING_DIR + 'DCS/ds9'

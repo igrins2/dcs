@@ -228,11 +228,11 @@ class MainWindow(Ui_Dialog, QMainWindow):
         #    self.read_addr(self.e_addr_Vbiasgate.text())
         #    self.read_addr(self.e_addr_Vrefmain.text())
 
-        elif param[0] == CMD_SETRAMPPARAM:
-            self.acquireramp()  
+        #elif param[0] == CMD_SETRAMPPARAM:
+        #    self.acquireramp()  
 
-        elif param[0] == CMD_SETFSPARAM:
-            self.acquireramp()         
+        #elif param[0] == CMD_SETFSPARAM:
+        #    self.acquireramp()         
 
         elif param[0] == CMD_ACQUIRERAMP:
 
@@ -641,6 +641,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
         if self.cur_cnt == 0:
             if self.set_parameter() == False:
                 return
+            ti.sleep(0.5)
 
         if self.busy:
             return
@@ -655,6 +656,7 @@ class MainWindow(Ui_Dialog, QMainWindow):
             self.y_stop = int(self.e_y_stop.text())
             msg = "%s %d %d %d %d" % (CMD_SETWINPARAM, self.x_start, self.x_stop, self.y_start, self.y_stop)
             self.producer.send_message(self.gui_q, msg)
+            ti.sleep(0.5)
         
         self.cur_cnt += 1
 
