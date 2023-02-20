@@ -166,8 +166,6 @@ class DC(threading.Thread):
 
         self.init1 = False  #for ics
 
-        self.simulation_mode = False
-
         self.producer_ics = None
         self.consumer_ics = None
 
@@ -273,24 +271,23 @@ class DC(threading.Thread):
 
     def callback_ics(self, ch, method, properties, body):
         cmd = body.decode()
-        self.param = cmd
-
-        param = self.param.split()
-        if param[0] == ALIVE:
-            if self.init1:
-                param = cmd.split()
-                msg = "%s %s" % (ALIVE, IAM)
-                self.producer_ics.send_message(self.dcs_q, msg)      
-
-        if param[1] != IAM:
-            return
-
+        
+        param = cmd.split()
+        
         msg = "receive: %s" % cmd
         self.log.send(IAM, INFO, msg)
 
-        self.simulation_mode = bool(int(param[2]))
+        if param[0] == ALIVE:
+            if self.init1:
+                msg = "%s %s" % (ALIVE, IAM)
+                self.producer_ics.send_message(self.dcs_q, msg)  
+            else:
+                msg = "%s %s TRY" % (param[0], IAM)
+                self.producer_ics.send_message(self.dcs_q, msg)  
+            return
 
-        if self.simulation_mode:
+        # simulation mode
+        if bool(int(param[2])):
             ti.sleep(1)
 
             _t = datetime.datetime.utcnow()
@@ -302,22 +299,20 @@ class DC(threading.Thread):
             
             msg = "send: %s" % msg
             self.log.send(IAM, INFO, msg)
-            
+
+            return        
+
+        if param[1] != IAM:
             return
 
-        if self.init1 == False:
-            msg = "%s %s TRY" % (param[0], IAM)
-            self.producer_ics.send_message(self.dcs_q, msg)
-            return          
-                
-        elif param[0] == CMD_STOPACQUISITION:
+        self.param = cmd
+
+        if param[0] == CMD_STOPACQUISITION:
             self.stop = True
             if self.StopAcquisition():
                 msg = "%s %s" % (param[0], IAM)
                 self.producer_ics.send_message(self.dcs_q, msg)
 
-
-            
 
 
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -666,6 +661,9 @@ class DC(threading.Thread):
         self.log.send(self._iam, INFO, "Initialize " + RET_OK)
 
         self.init1 = True
+        
+        msg = "%s %s" % (ALIVE, IAM)
+        self.producer_ics.send_message(self.dcs_q, msg)
 
         return True
 
