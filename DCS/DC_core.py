@@ -94,18 +94,15 @@ class DC(threading.Thread):
         self.ics_id = cfg.get('ICS', 'id')
         self.ics_pwd = cfg.get('ICS', 'pwd')
 
-        self.dcs_hk_ex = cfg.get('ICS', "dcs_hk_exchange")     
-        self.dcs_hk_q = cfg.get('ICS', "dcs_hk_routing_key")
-        self.hk_dcs_ex = cfg.get('ICS', "hk_dcs_exchange")     
-        self.hk_dcs_q = cfg.get('ICS', "hk_dcs_routing_key")
+        self.hk_dcs_ex = cfg.get('ICS', "hk_sub_exchange")     
+        self.hk_dcs_q = cfg.get('ICS', "hk_sub_routing_key")
 
         # exchange - queue for ICS
         self.ics_ex = cfg.get('ICS', 'ics_exchange')
         self.ics_q = cfg.get('ICS', 'ics_routing_key')
 
         self.dcs_ip_addr = cfg.get(IAM, 'ip_addr')
-        self.dcs_ex = cfg.get('ICS', 'dcs_exchange')
-        self.dcs_q = cfg.get('ICS', 'dcs_routing_key')
+        self.dcs_q = IAM+'.q'
 
         # ===========================================
         # local
@@ -165,6 +162,7 @@ class DC(threading.Thread):
         self.showfits = False
 
         self.init1 = False  #for ics
+        self.init2 = False  #for ics
 
         self.producer_ics = None
         self.consumer_ics = None
@@ -172,7 +170,6 @@ class DC(threading.Thread):
         self.producer = None
         self.consumer = None
 
-        self.producer_hk = None
         self.consumer_hk = None
 
         self.stop = False
@@ -181,7 +178,6 @@ class DC(threading.Thread):
         self.param = ""
 
         if self.gui:
-            self.connect_to_server_hk_ex()
             self.connect_to_server_hk_q()
 
             self.connect_to_server_ics_ex()
@@ -212,13 +208,6 @@ class DC(threading.Thread):
 
 
     #-------------------------------
-    def connect_to_server_hk_ex(self):
-        # RabbitMQ connect        
-        self.producer_hk = MsgMiddleware(IAM, self.ics_ip_addr, self.ics_id, self.ics_pwd, self.dcs_hk_ex)
-        self.producer_hk.connect_to_server()
-        self.producer_hk.define_producer()
-
-
     def connect_to_server_hk_q(self):
         # RabbitMQ connect
         self.consumer_hk = MsgMiddleware(IAM, self.ics_ip_addr, self.ics_id, self.ics_pwd, self.hk_dcs_ex)      
@@ -254,7 +243,7 @@ class DC(threading.Thread):
     #-------------------------------
     def connect_to_server_ics_ex(self):
         # RabbitMQ connect        
-        self.producer_ics = MsgMiddleware(IAM, self.ics_ip_addr, self.ics_id, self.ics_pwd, self.dcs_ex)
+        self.producer_ics = MsgMiddleware(IAM, self.ics_ip_addr, self.ics_id, self.ics_pwd, IAM+'.ex')
         self.producer_ics.connect_to_server()
         self.producer_ics.define_producer()
 
@@ -270,48 +259,52 @@ class DC(threading.Thread):
 
 
     def callback_ics(self, ch, method, properties, body):
-        cmd = body.decode()
-        
-        param = cmd.split()
-        
+        cmd = body.decode()        
         msg = "receive: %s" % cmd
         self.log.send(IAM, INFO, msg)
 
-        if param[0] == ALIVE:
-            if self.init1:
-                msg = "%s %s" % (ALIVE, IAM)
-                self.producer_ics.send_message(self.dcs_q, msg)  
-            else:
-                msg = "%s %s TRY" % (param[0], IAM)
-                self.producer_ics.send_message(self.dcs_q, msg)  
+        param = cmd.split()
+
+        if not (param[1] == "all" or param[1] == IAM):
             return
 
         # simulation mode
         if bool(int(param[2])):
-            ti.sleep(1)
 
-            _t = datetime.datetime.utcnow()
-            cur_datetime = [_t.year, _t.month, _t.day, _t.hour, _t.minute, _t.second, _t.microsecond]
-            folder_name = "%04d%02d%02d_%02d%02d%02d" % (cur_datetime[0], cur_datetime[1], cur_datetime[2], cur_datetime[3], cur_datetime[4], cur_datetime[5])
-
-            msg = "%s %s %s" % (param[0], IAM, folder_name)
-            self.producer_ics.send_message(self.dcs_q, msg)
+            if param[0] == CMD_INIT2_DONE or param[0] == CMD_INITIALIZE2_ICS:
+                self.producer_ics.send_message(self.dcs_q, CMD_INIT2_DONE) 
             
-            msg = "send: %s" % msg
-            self.log.send(IAM, INFO, msg)
+            elif param[0] == CMD_SETFSPARAM_ICS or param[0] == CMD_ACQUIRERAMP_ICS:                
+                ti.sleep(2)
 
-            return        
+                _t = datetime.datetime.utcnow()
+                cur_datetime = [_t.year, _t.month, _t.day, _t.hour, _t.minute, _t.second, _t.microsecond]
+                folder_name = "%04d%02d%02d_%02d%02d%02d" % (cur_datetime[0], cur_datetime[1], cur_datetime[2], cur_datetime[3], cur_datetime[4], cur_datetime[5])
 
-        if param[1] != IAM:
+                msg = "%s 2 %s" % (param[0], folder_name)
+                self.producer_ics.send_message(self.dcs_q, msg)
+            
+                msg = "send: %s" % msg
+                self.log.send(IAM, INFO, msg)
+
+            elif param[0] == CMD_STOPACQUISITION:
+                self.producer_ics.send_message(self.dcs_q, param[0])
+            
+            return
+
+        if not self.init1:
             return
 
         self.param = cmd
 
+        if param[0] == CMD_INIT2_DONE:
+            if self.init2:
+                self.producer_ics.send_message(self.dcs_q, param[0])  
+
         if param[0] == CMD_STOPACQUISITION:
             self.stop = True
             if self.StopAcquisition():
-                msg = "%s %s" % (param[0], IAM)
-                self.producer_ics.send_message(self.dcs_q, msg)
+                self.producer_ics.send_message(self.dcs_q, param[0])
 
 
 
@@ -476,7 +469,7 @@ class DC(threading.Thread):
 
             #--------------------------------------------------------
 
-            elif param[0] == CMD_INITIALIZE2_ICS:
+            elif (param[0] == CMD_INIT2_DONE and not self.init2) or param[0] == CMD_INITIALIZE2_ICS:
                 if self.Initialize2() == False:
                     continue
                 if self.ResetASIC() == False:
@@ -484,8 +477,7 @@ class DC(threading.Thread):
                 if self.DownloadMCD() == False:
                     continue
                 if self.SetDetector(MUX_TYPE, 32):
-                    msg = "%s %s" % (param[0], IAM)
-                    self.producer_ics.send_message(self.dcs_q, msg)
+                    self.producer_ics.send_message(self.dcs_q, param[0])
 
             elif param[0] == CMD_SETFSPARAM_ICS:
                 self.samplingMode = FOWLER_MODE
@@ -495,16 +487,16 @@ class DC(threading.Thread):
                 if self.AcquireRamp() == False:
                     continue
                 if self.ImageAcquisition(False):
-                    msg = "%s %s %.3f %s" % (param[0], IAM, self.measured_durationT, self.folder_name)
+                    msg = "%s %.3f %s" % (param[0], self.measured_durationT, self.folder_name)
                 else:
-                    msg = "%s %s" % (CMD_STOPACQUISITION, IAM)
+                    msg = CMD_STOPACQUISITION
                 self.producer_ics.send_message(self.dcs_q, msg)
 
             elif param[0] == CMD_ACQUIRERAMP_ICS:
                 if self.AcquireRamp() == False:
                     continue
                 if self.ImageAcquisition(False):
-                    msg = "%s %s %.3f %s" % (CMD_SETFSPARAM_ICS, IAM, self.measured_durationT, self.folder_name)
+                    msg = "%s %.3f %s" % (CMD_SETFSPARAM_ICS, self.measured_durationT, self.folder_name)
                     self.producer_ics.send_message(self.dcs_q, msg)
 
             self.param = ""
@@ -662,13 +654,11 @@ class DC(threading.Thread):
 
         self.init1 = True
         
-        msg = "%s %s" % (ALIVE, IAM)
-        self.producer_ics.send_message(self.dcs_q, msg)
-
         return True
 
 
     def Initialize2(self):
+        self.init2 = False
 
         if self.handle == 0:
             return False
@@ -840,7 +830,9 @@ class DC(threading.Thread):
                 return False
 
         msg = "Set Detector (%d, %d) succeeded" % (muxType, outputs)
-        self.log.send(self._iam, INFO, msg)            
+        self.log.send(self._iam, INFO, msg)         
+
+        self.init2 = True   
 
         return True
 

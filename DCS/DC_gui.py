@@ -32,9 +32,10 @@ class MainWindow(Ui_Dialog, QMainWindow):
 
     def __init__(self, autostart=False):
         super().__init__()
+
         self.setupUi(self)
         self.setWindowTitle("Detector Control System 1.0")
-        self.setFixedSize(906, 570)
+        self.setFixedSize(921, 641)
 
         self.log = LOG(WORKING_DIR + "DCS")
 
